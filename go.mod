@@ -1,1 +1,1 @@
-module github.com/456vv/vmap
+module github.com/456vv/vmap/v2
