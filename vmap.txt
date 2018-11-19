@@ -1,0 +1,27 @@
+type Map struct	{									// Map结构
+    *sync.Map												//	Map
+    length	int												//	长度
+}
+func NewMap() *Map						 			// Map对象
+func (m	*Map) New(key interface{}) *Map						// 新建一个key对应的Map对象，并返回该Map
+func (m	*Map) GetNewMap(key interface{}) *Map				// 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。(一次单个）
+func (m	*Map) GetNewMaps(keys ...interface{}) *Map			// 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。(一次多个)
+func (m	*Map) Len() int										// 长度
+func (m	*Map) Set(key, val interface{})						// 设置
+func (m	*Map) Get(key interface{}) interface{}				// 读取
+func (m	*Map) Has(key interface{}) bool				 		// 判断
+func (m	*Map) GetOrDefault(key interface{}, def	interface{}) interface{}	//读取，没有返回默认值
+func (m	*Map) GetHas(key interface{}) (val interface{},	ok bool) 			// 读取并判断
+func (m	*Map) Index(key	...interface{})	interface{}							// 快速索引
+func (m	*Map) IndexHas(key ...interface{}) (interface{}, bool)				// 快速索引+判断
+func (m	*Map) Del(key interface{})				 			// 删除
+func (m	*Map) Dels(key []interface{})						// 批量删除
+func (m	*Map) ReadAll()	interface{}				 			// 读取所有
+func (m	*Map) Range(f func(key,	value interface{}) bool)	// 遍历
+func (m	*Map) Reset()						 				// 重置
+func (m	*Map) Copy(from	*Map)								// 复制，从 from 复制写入到m
+func (m	*Map) MarshalJSON() ([]byte, error)					// 编码JSON
+func (m	*Map) UnmarshalJSON(data []byte) error				// 解码JSON
+func (m	*Map) WriteTo(mm interface{}) (err error)			// 写入到 mm
+func (m	*Map) ReadFrom(mm interface{}) error				// 从 mm 读取
+func (m	*Map) String() string								// 字符串
