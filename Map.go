@@ -5,11 +5,14 @@ import (
     "encoding/json"
     "reflect"
     "fmt"
+    "time"
 )
 
 // Map 推荐使用NewMap来规范的创建，这样可避免不必要的错误。
 type Map struct {
-	*sync.Map				// Map
+	*sync.Map								// Map
+    expired		map[interface{}]*time.Timer	// 有效期
+    m			sync.Mutex					// 锁
 }
 
 //NewMap 对象
@@ -18,6 +21,7 @@ type Map struct {
 func NewMap() *Map {
     return &Map{
         Map: new(sync.Map),
+        expired: make(map[interface{}]*time.Timer),
     }
 }
 
@@ -87,21 +91,46 @@ func (m *Map) Set(key, val interface{}) {
 	m.Map.Store(key, val)
 }
 
+// SetExpired 单个键值的有效期
+//	key interface{}		键名
+//	d time.Duration		时间
+func (m *Map) SetExpired(key interface{}, d time.Duration){
+	m.m.Lock()
+	defer m.m.Unlock()
+	
+	//如果该Key不存在，则退出
+	if !m.Has(key) {
+		return
+	}
+	
+	//存在定时，使用定时。如果过期，则创建新的定时
+	if timer, ok := m.expired[key]; ok {
+		if timer.Reset(d) {
+			return
+		}
+		timer.Stop()
+	}
+	
+	m.expired[key]=time.AfterFunc(d, func(){
+		m.m.Lock()
+		defer m.m.Unlock()
+		m.Map.Delete(key)
+		delete(m.expired, key)
+	})
+}
+
+
 //Get 读取
-//    参：
-//      key interface{}   读取值的键名
-//    返：
-//      interface{}       读取值
+//	key interface{}   读取值的键名
+//	interface{}       读取值
 func (m *Map) Get(key interface{}) interface{} {
     val, _ := m.Map.Load(key)
     return val
 }
 
 //Has 判断
-//    参：
-//      key interface{}   键名
-//    返：
-//      bool              判断，如果为true,判断存在。否则为flase
+//	key interface{}   键名
+//	bool              判断，如果为true,判断存在。否则为flase
 func (m *Map) Has(key interface{}) bool {
     _, ok := m.Map.Load(key)
     return ok
@@ -190,25 +219,34 @@ func (m *Map) IndexHas(key ...interface{}) (interface{}, bool) {
 
 
 //Del 删除
-//    参：
-//      key interface{}   键名
+//	key interface{}   键名
 func (m *Map) Del(key interface{}) {
+	m.m.Lock()
+	defer m.m.Unlock()
+	if timer, ok := m.expired[key]; ok {
+		timer.Stop()
+	}
+	delete(m.expired, key)
 	m.Map.Delete(key)
 }
 
 //Dels 删除
-//    参：
-//      keys []interface{}   键名
+//	keys []interface{}   键名
 func (m *Map) Dels(keys []interface{}) {
-    for _, key := range keys {
+ 	m.m.Lock()
+	defer m.m.Unlock()
+	for _, key := range keys {
+		if timer, ok := m.expired[key]; ok {
+			timer.Stop()
+		}
+		delete(m.expired, key)
     	m.Map.Delete(key)
     }
 }
 
 
 //ReadAll 读取所有
-//    返：
-//      interface{}   复制一份Map
+//	interface{}   复制一份Map
 func (m *Map) ReadAll() interface{} {
     mm := make(map[interface{}]interface{})
 	m.Map.Range(func(k, v interface{}) bool{
@@ -221,14 +259,20 @@ func (m *Map) ReadAll() interface{} {
 
 //Reset 重置归零
 func (m *Map) Reset() {
+	m.m.Lock()
+	defer m.m.Unlock()
+	
+    //停止所有定时
+    for _,timer := range m.expired {
+    	timer.Stop()
+    }
+    m.expired = make(map[interface{}]*time.Timer)
     *m.Map =  sync.Map{}
 }
 
 //Copy 从 from 复制所有并写入到 m 中
-//    参：
-//      from *Map       Map对象
-//    返：
-//      error           错误
+//	from *Map       Map对象
+//	error           错误
 func (m *Map) Copy(from *Map, over bool) {
     from.Map.Range(func(k, v interface{})bool{
         if vm, ok := v.(*Map); ok {
@@ -250,9 +294,8 @@ func (m *Map) Copy(from *Map, over bool) {
 }
 
 //MarshalJSON 转JSON
-//    返：
-//      []byte    字节格式的json
-//      error     错误，格式无法压缩，导致 json.Marshal 发生错误。
+//	[]byte    字节格式的json
+//	error     错误，格式无法压缩，导致 json.Marshal 发生错误。
 func (m *Map) MarshalJSON() ([]byte, error) {
     var mj = m.marshalJSON()
     return json.Marshal(mj)
@@ -286,8 +329,7 @@ func (m *Map) marshalJSON() interface{} {
 }
 
 //String 字符串
-//    返：
-//      string    字符串
+//	string    字符串
 func (m *Map) String() string {
     if m == nil {
         return "{}"
@@ -300,10 +342,8 @@ func (m *Map) String() string {
 }
 
 //UnmarshalJSON JSON转Map，格式需要是 map[string]interface{}
-//    参：
-//      data []byte    字节格式的json
-//    返：
-//      error          错误，格式无法解压，导致 json.Unmarshal 发生错误。
+//	data []byte    字节格式的json
+//	error          错误，格式无法解压，导致 json.Unmarshal 发生错误。
 func (m *Map) UnmarshalJSON(data []byte) error {
     var mjs  = make(map[string]interface{})
     err := json.Unmarshal(data, &mjs)
@@ -356,10 +396,8 @@ func (m *Map) unmarshalJSON(mjvs map[string]interface{}) {
 
 
 //WriteTo 写入到 mm
-//    参：
-//      mm interface{}     写入到mm
-//    返：
-//      error              错误，mm类型不是map，发生错误。
+//	mm interface{}     写入到mm
+//	error              错误，mm类型不是map，发生错误。
 func (m *Map) WriteTo(mm interface{}) (err error) {
     rv := inDirect( reflect.ValueOf(mm) )
     if rv.Kind() != reflect.Map {
@@ -407,10 +445,8 @@ func writeToArray(rv reflect.Value) reflect.Value {
 }
 
 //ReadFrom 从mm中读取 map
-//    参：
-//      mm interface{}      从mm中读取
-//    返：
-//      error               错误，mm类型不是map，发生错误。
+//	mm interface{}      从mm中读取
+//	error               错误，mm类型不是map，发生错误。
 func (m *Map) ReadFrom(mm interface{}) error {
     rv := reflect.ValueOf(mm)
     rvi := inDirect( rv )
