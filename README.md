@@ -12,6 +12,7 @@ func (m	*Map) GetNewMap(key interface{}) *Map				// 如果不存在增加一个k
 func (m	*Map) GetNewMaps(keys ...interface{}) *Map			// 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。(一次多个)
 func (m	*Map) Len() int										// 长度
 func (m	*Map) Set(key, val interface{})						// 设置
+func (m *Map) SetExpired(key interface{}, d time.Duration)	// 设置KEY有效期，过期会自动删除
 func (m	*Map) Get(key interface{}) interface{}				// 读取
 func (m	*Map) Has(key interface{}) bool				 		// 判断
 func (m	*Map) GetOrDefault(key interface{}, def	interface{}) interface{}	//读取，没有返回默认值
