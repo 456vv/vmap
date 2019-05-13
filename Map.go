@@ -225,8 +225,8 @@ func (m *Map) Del(key interface{}) {
 	defer m.m.Unlock()
 	if timer, ok := m.expired[key]; ok {
 		timer.Stop()
+		delete(m.expired, key)
 	}
-	delete(m.expired, key)
 	m.Map.Delete(key)
 }
 
@@ -238,8 +238,8 @@ func (m *Map) Dels(keys []interface{}) {
 	for _, key := range keys {
 		if timer, ok := m.expired[key]; ok {
 			timer.Stop()
+			delete(m.expired, key)
 		}
-		delete(m.expired, key)
     	m.Map.Delete(key)
     }
 }
