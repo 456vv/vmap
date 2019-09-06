@@ -2,10 +2,26 @@ package vmap
 
 import (
 	"testing"
-	//"log"
+	"time"
 )
 
 
+
+func Test_New(t *testing.T){
+	m := NewMap()
+	m.Set("1","1")
+	m.New("1")
+	if !m.Has("1") {
+		t.Fatalf("错误，无法写入")
+	}
+	inf, ok := m.GetHas("1")
+	if !ok {
+		t.Fatalf("错误，无法读取")
+	}
+	if _, ok := inf.(*Map); !ok {
+		t.Fatalf("错误，无法转换")
+	}
+}
 func Test_NewMap(t *testing.T){
 	type a struct{}
 	tests := [][]interface{}{
@@ -21,6 +37,64 @@ func Test_NewMap(t *testing.T){
 		if v[1] != val || v[2] != ok {
 			t.Fatalf("写入的键名(%v)=值(%v)，判断(%v)。返回的值(%v)，判断(%v)", v[0], v[1], v[2], val, ok)
 		}
+	}
+}
+
+
+func Test_SetExpired(t *testing.T){
+	a := NewMap()
+	a.Set("1", "1")
+	a.SetExpired("1", time.Second)
+	time.Sleep(time.Second*2)
+	if a.Has("1") {
+		t.Fatalf("错误，无法删除干静 1")
+	}
+	if _, ok := a.Map.Load("1"); ok {
+		t.Fatalf("错误，无法删除干静 2")
+	}
+	
+}
+
+func Test_SetExpiredCall(t *testing.T){
+	var err int = 1
+	a := NewMap()
+	a.Set("1", "1")
+	a.SetExpiredCall("1", time.Second, func (inf interface{}){
+		if v, ok := inf.(string); ok && v == "1" {
+			err = 0
+		}
+	})
+	time.Sleep(time.Second*2)
+	if err == 1 {
+		t.Fatalf("错误，无法过期删除")
+	}
+	if a.Has("1") {
+		t.Fatalf("错误，无法删除干静 1")
+	}
+	if _, ok := a.Map.Load("1"); ok {
+		t.Fatalf("错误，无法删除干静 2")
+	}
+	
+}
+func Test_Reset(t *testing.T){
+	var err int = 1
+	a := NewMap()
+	a.Set("1", "1")
+	a.SetExpiredCall("1", time.Second, func (inf interface{}){
+		if v, ok := inf.(string); ok && v == "1" {
+			err = 0
+		}
+	})
+	a.Reset()
+	time.Sleep(time.Second)
+	if err == 1 {
+		t.Fatalf("错误，无法清空 1")
+	}
+	if a.Len() > 0 {
+		t.Fatalf("错误，无法清空 2")
+	}
+	if len(a.keys) > 0 {
+		t.Fatalf("错误，无法清空 3")
 	}
 }
 

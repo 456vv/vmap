@@ -13,6 +13,7 @@ func (m	*Map) GetNewMaps(keys ...interface{}) *Map			// 如果不存在增加一
 func (m	*Map) Len() int										// 长度
 func (m	*Map) Set(key, val interface{})						// 设置
 func (m *Map) SetExpired(key interface{}, d time.Duration)	// 设置KEY有效期，过期会自动删除
+func (m *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{}))	// 设置KEY有效期，过期会自动删除，并调用函数
 func (m	*Map) Get(key interface{}) interface{}				// 读取
 func (m	*Map) Has(key interface{}) bool				 		// 判断
 func (m	*Map) GetOrDefault(key interface{}, def	interface{}) interface{}	//读取，没有返回默认值

@@ -8,30 +8,40 @@ import (
     "time"
 )
 
+type timer struct{
+	t	*time.Timer
+	f	func(interface{})
+}
+func (t *timer) Reset(d time.Duration) bool{
+	return t.t.Reset(d)
+}
+func (t *timer) Stop() bool {
+	return t.t.Stop()
+}
+
 // Map 推荐使用NewMap来规范的创建，这样可避免不必要的错误。
 type Map struct {
 	*sync.Map								// Map
-    expired		map[interface{}]*time.Timer	// 有效期
+    expired		map[interface{}]*timer		// 有效期
     m			sync.Mutex					// 锁
+    keys		[]interface{}				// 存放键名
+    length		int							// 长度
 }
 
 //NewMap 对象
-//    返：
-//      *Map      Map对象
+//	*Map      Map对象
 func NewMap() *Map {
     return &Map{
         Map: new(sync.Map),
-        expired: make(map[interface{}]*time.Timer),
+        expired: make(map[interface{}]*timer),
     }
 }
 
 //New 增加一个key对应的Map对象，并返回该对象。
 //.New 不管是否存在该 key 键值，都会写入一个新的Map覆盖 key 键值。
 //要是你需要一个这样的功能，存在key键值，返回该key键值。如果不存在该key键值，返回一个新的key对应的Map。请使用 .GetNewMap 方法
-//    参：
-//      key interface{}     键名
-//    返：
-//      *Map                Map对象
+//	key interface{}     键名
+//	*Map                Map对象
 func (m *Map) New(key interface{}) *Map {
     t := NewMap()
     m.Set(key, t)
@@ -39,30 +49,22 @@ func (m *Map) New(key interface{}) *Map {
 }
 
 //GetNewMap 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
-//    参：
-//      key interface{}     键名
-//    返：
-//      *Map                Map对象
+//	key interface{}     键名
+//	*Map                Map对象
 func (m *Map) GetNewMap(key interface{}) *Map {
-    t := NewMap()
-    actual, ok := m.Map.LoadOrStore(key, t)
+    actual, ok := m.GetHas(key)
 	if ok {
 		if mm, ok := actual.(*Map); ok {
 			return mm
-		}else{
-			m.Map.Store(key, t)
-			return t
 		}
 	}
-	return actual.(*Map)
+	return m.New(key)
 }
 
 //GetNewMaps 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
 //他支持链式读取或创建，如果你想相独读取，可以使用 .Index 方法
-//    参：
-//      key ...interface{}     键名
-//    返：
-//      *Map                Map对象
+//	key ...interface{}     键名
+//	*Map                Map对象
 func (m *Map) GetNewMaps(keys ...interface{}) *Map {
 	tm := m
 	for _, key := range keys {
@@ -72,29 +74,38 @@ func (m *Map) GetNewMaps(keys ...interface{}) *Map {
 }
 
 //Len 长度
-//    返：
-//      int   长度
+//	int   长度
 func (m *Map) Len() int {
-	var length int
-	m.Map.Range(func(k, v interface{}) bool {
-		length++
-		return true
-	})
-    return length
+    return m.length
 }
 
 //Set 设置，如果你设置的值是Map，将会被强制初始化该值。这样避免读取并调用时候出错。
-//    参：
-//      key interface{}   键名
-//      val interface{}   值
+//	key interface{}   键名
+//	val interface{}   值
 func (m *Map) Set(key, val interface{}) {
+	m.m.Lock()
+	defer m.m.Unlock()
+	
 	m.Map.Store(key, val)
+	if !m.Has(key) {
+		m.keys = append(m.keys, key)
+		m.length++
+	}
 }
+
 
 // SetExpired 单个键值的有效期
 //	key interface{}		键名
 //	d time.Duration		时间
 func (m *Map) SetExpired(key interface{}, d time.Duration){
+	m.SetExpiredCall(key, d, nil)
+}
+
+// SetExpiredCall 单个键值的有效期，过期后并调用函数
+//	key interface{}		键名
+//	d time.Duration		时间
+//	f func(interface)	函数
+func (m *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{})){
 	m.m.Lock()
 	defer m.m.Unlock()
 	
@@ -105,18 +116,25 @@ func (m *Map) SetExpired(key interface{}, d time.Duration){
 	
 	//存在定时，使用定时。如果过期，则创建新的定时
 	if timer, ok := m.expired[key]; ok {
+		if f != nil {
+			timer.f = f
+		}
 		if timer.Reset(d) {
 			return
 		}
 		timer.Stop()
 	}
 	
-	m.expired[key]=time.AfterFunc(d, func(){
-		m.m.Lock()
-		defer m.m.Unlock()
-		m.Map.Delete(key)
-		delete(m.expired, key)
+	m.expired[key]= m.afterFunc(key, d, f)
+}
+func (m *Map) afterFunc(key interface{}, d time.Duration, f func(interface{})) *timer{
+	k := key
+	t := &timer{}
+	t.f = f
+	t.t = time.AfterFunc(d, func(){
+		m.Del(k)
 	})
+	return t
 }
 
 
@@ -132,27 +150,26 @@ func (m *Map) Get(key interface{}) interface{} {
 //	key interface{}   键名
 //	bool              判断，如果为true,判断存在。否则为flase
 func (m *Map) Has(key interface{}) bool {
-    _, ok := m.Map.Load(key)
-    return ok
+	for _, k := range m.keys {
+		if reflect.DeepEqual(k, key) {
+			return true
+		}
+	}
+	return false
 }
 
 //GetHas 读取并判断
-//    参：
-//      key interface{}   键名
-//    返：
-//      val interface{}   读取值
-//      ok bool           判断，如果为true,判断存在。否则为flase
+//	key interface{}   键名
+//	val interface{}   读取值
+//	ok bool           判断，如果为true,判断存在。否则为flase
 func (m *Map) GetHas(key interface{}) (val interface{}, ok bool) {
     return m.Map.Load(key)
 }
 
-
 //GetOrDefault 读取，如果不存，返回默认值
-//    参：
-//      key interface{}   	键名
-//		def interface{}		默认值
-//    返：
-//      val interface{}   	读取值
+//	key interface{}   	键名
+//	def interface{}		默认值
+//	val interface{}   	读取值
 func (m *Map) GetOrDefault(key interface{}, def interface{}) interface{} {
 	val, ok := m.Map.Load(key)
 	if !ok || reflect.ValueOf(val).Kind() == reflect.Invalid {
@@ -160,7 +177,6 @@ func (m *Map) GetOrDefault(key interface{}, def interface{}) interface{} {
 	}
     return val
 }
-
 
 //Index 指定读取，这个仅能使用于 *Map 中有子 *Map。功能用于快速索引定位。
 //    参：
@@ -173,11 +189,9 @@ func (m *Map) Index(key ...interface{}) interface{} {
 }
 
 //IndexHas 指定读取和判断，这个只有使用于 *Map 中有子 *Map。功能用于快速索引定位。
-//    参：
-//      key ...interface{}        快速指定父子关系中的值，如 .Index("A", "B", "C")
-//    返：
-//      interface{}               读取值
-//      bool                      判断，如果为true，表示存在。否则为flase
+//    key ...interface{}        快速指定父子关系中的值，如 .Index("A", "B", "C")
+//    interface{}               读取值
+//    bool                      判断，如果为true，表示存在。否则为flase
 //    例：
 //      m1 := birdswo.NewMap()
 //      m2 := birdswo.NewMap()
@@ -223,24 +237,32 @@ func (m *Map) IndexHas(key ...interface{}) (interface{}, bool) {
 func (m *Map) Del(key interface{}) {
 	m.m.Lock()
 	defer m.m.Unlock()
+	
+	//停止定时并删除
 	if timer, ok := m.expired[key]; ok {
 		timer.Stop()
+		if timer.f != nil {
+			go timer.f(m.Get(key))
+		}
 		delete(m.expired, key)
 	}
-	m.Map.Delete(key)
+	
+	//删除键值
+    for i := 0; i < len(m.keys); i++ {
+        if reflect.DeepEqual(m.keys[i], key) {
+            m.keys = append(m.keys[:i], m.keys[i+1:]...)
+            m.length--
+            i--
+			m.Map.Delete(key)
+        }
+    }
 }
 
 //Dels 删除
 //	keys []interface{}   键名
 func (m *Map) Dels(keys []interface{}) {
- 	m.m.Lock()
-	defer m.m.Unlock()
 	for _, key := range keys {
-		if timer, ok := m.expired[key]; ok {
-			timer.Stop()
-			delete(m.expired, key)
-		}
-    	m.Map.Delete(key)
+		m.Del(key)
     }
 }
 
@@ -263,11 +285,16 @@ func (m *Map) Reset() {
 	defer m.m.Unlock()
 	
     //停止所有定时
-    for _,timer := range m.expired {
+    for key, timer := range m.expired {
     	timer.Stop()
+		if timer.f != nil {
+			go timer.f(m.Get(key))
+		}
     }
-    m.expired = make(map[interface{}]*time.Timer)
-    *m.Map =  sync.Map{}
+    m.expired	= make(map[interface{}]*timer)
+    m.keys		= m.keys[:0]
+    *m.Map		= sync.Map{}
+    m.length	= 0
 }
 
 //Copy 从 from 复制所有并写入到 m 中
@@ -275,17 +302,27 @@ func (m *Map) Reset() {
 //	error           错误
 func (m *Map) Copy(from *Map, over bool) {
     from.Map.Range(func(k, v interface{})bool{
+	    m.m.Lock()
+		defer m.m.Unlock()
+		if !m.Has(k) {
+			m.keys = append(m.keys, k)
+		}
         if vm, ok := v.(*Map); ok {
-            inf, loaded := m.Map.LoadOrStore(k, NewMap())
+        	
+            inf, isExist := m.Map.LoadOrStore(k, NewMap())
         	if tm, ok := inf.(*Map); ok {
+        		//双方都是Map类型
             	tm.Copy(vm, over)
-        	}else if over && loaded {
+        	}else if over && isExist {
+        		//如果已经存在
+        		//并设置了覆盖
         		tm := NewMap()
-    			m.Set(k, tm)
             	tm.Copy(vm, over)
+    			m.Map.Store(k, tm)
         	}
+        	
         }else if over {
-            m.Set(k, v)
+            m.Map.Store(k, v)
         }else{
         	m.Map.LoadOrStore(k, v)
         }
@@ -316,12 +353,13 @@ func arraySub(vs []interface{}) interface{}{
 func (m *Map) marshalJSON() interface{} {
     var mj = make(map[string]interface{})
     m.Map.Range(func(key, val interface{})bool{
+    	k := fmt.Sprintf("%v", key)
         if vm, ok := val.(*Map); ok {
-            mj[fmt.Sprint(key)] = vm.marshalJSON()
+            mj[k] = vm.marshalJSON()
         }else if vms, ok := val.([]interface{}); ok {
-            mj[fmt.Sprint(key)] = arraySub(vms)
+            mj[k] = arraySub(vms)
         }else{
-            mj[fmt.Sprint(key)] = val
+            mj[k] = val
         }
         return true
     })
