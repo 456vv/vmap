@@ -58,6 +58,14 @@ func Test_SetExpired(t *testing.T){
 func Test_SetExpiredCall(t *testing.T){
 	var err int = 1
 	a := NewMap()
+	
+	a.Set("1", "1")
+	a.SetExpired("1", time.Second)
+	time.Sleep(time.Second*2)
+	if a.Has("1") {
+		t.Fatalf("错误，过期无法删除")
+	}
+	
 	a.Set("1", "1")
 	a.SetExpiredCall("1", time.Second, func (inf interface{}){
 		if v, ok := inf.(string); ok && v == "1" {

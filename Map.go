@@ -114,8 +114,15 @@ func (m *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{
 		return
 	}
 	
+	giveup := d == time.Duration(0)
+	
 	//存在定时，使用定时。如果过期，则创建新的定时
 	if timer, ok := m.expired[key]; ok {
+		if giveup {
+			timer.Stop()
+			delete(m.expired, key)
+			return
+		}
 		if f != nil {
 			timer.f = f
 		}
@@ -124,8 +131,9 @@ func (m *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{
 		}
 		timer.Stop()
 	}
-	
-	m.expired[key]= m.afterFunc(key, d, f)
+	if !giveup {
+		m.expired[key]= m.afterFunc(key, d, f)
+	}
 }
 func (m *Map) afterFunc(key interface{}, d time.Duration, f func(interface{})) *timer{
 	k := key
