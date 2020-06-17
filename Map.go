@@ -210,8 +210,8 @@ func (m *Map) Index(key ...interface{}) interface{} {
 //      //value true
 func (m *Map) IndexHas(key ...interface{}) (interface{}, bool) {
     switch len(key){
-	    case 0:return nil, false
-	    case 1:return m.Map.Load(key[0])
+    case 0:return nil, false
+    case 1:return m.Map.Load(key[0])
     }
     var (
         l    = len(key)
@@ -230,10 +230,10 @@ func (m *Map) IndexHas(key ...interface{}) (interface{}, bool) {
             break
         }
         switch mst.(type) {
-            case *Map:
-                ms[i+1] = mst.(*Map)
-            default:
-                return nil, false
+        case *Map:
+            ms[i+1] = mst.(*Map)
+        default:
+            return nil, false
         }
     }
     return mst, ok

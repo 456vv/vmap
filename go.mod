@@ -1,3 +1,3 @@
-module github.com/456vv/vmap/v2
+module github.com/456vv/vmap
 
-go 1.12
+go 1.14
