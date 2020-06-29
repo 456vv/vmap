@@ -49,7 +49,7 @@ func Test_SetExpired(t *testing.T){
 	if a.Has("1") {
 		t.Fatalf("错误，无法删除干静 1")
 	}
-	if _, ok := a.Map.Load("1"); ok {
+	if _, ok := a.GetHas("1"); ok {
 		t.Fatalf("错误，无法删除干静 2")
 	}
 	
@@ -79,7 +79,7 @@ func Test_SetExpiredCall(t *testing.T){
 	if a.Has("1") {
 		t.Fatalf("错误，无法删除干静 1")
 	}
-	if _, ok := a.Map.Load("1"); ok {
+	if _, ok := a.GetHas("1"); ok {
 		t.Fatalf("错误，无法删除干静 2")
 	}
 	
