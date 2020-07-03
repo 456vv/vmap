@@ -3,9 +3,7 @@ golang Map，go Map, 可多线程安全读写，内部封装于 sync.Map。
 
 # **列表：**
 ```go
-type Map struct {                                        // Map结构
-    *sync.Map                                               // Map
-}
+type Map struct {}                                       // Map结构
 func NewMap() *Map                                          // Map对象
 func (m *Map) New(key interface{}) *Map                     // 新建一个key对应的Map对象，并返回该Map
 func (m *Map) GetNewMap(key interface{}) *Map               // 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。(一次单个）
