@@ -469,7 +469,7 @@ func writeToArray(rv reflect.Value) reflect.Value {
 	subs := reflect.MakeSlice(reflect.SliceOf(Interface), 0, 0)
 	for i:= 0;i<rv.Len();i++{
 		val := rv.Index(i)
-        rvi := inDirect(val)
+        rvi := reflect.Indirect(val)
 
         	
         if vm, ok := val.Interface().(*Map); ok {
@@ -503,7 +503,7 @@ func readFromArray(rv reflect.Value) []interface{}{
 	subs := make([]interface{}, 0)
 	for i:= 0;i<rv.Len();i++{
 		val := rv.Index(i)
-        rvi := inDirect(val)
+        rvi := reflect.Indirect(val)
 		if rvi.Kind()  == reflect.Map {
 			mm :=NewMap()
 			mm.readFrom(rvi)
@@ -521,16 +521,16 @@ func (m *Map) readFrom(rv reflect.Value) error {
     vs := rv.MapKeys()
     for _, key := range vs {
         val := rv.MapIndex(key)
-        rvi    := inDirect(val)
+        rvi := reflect.Indirect(val)
 
         if rvi.Kind() == reflect.Map {
             mm    := NewMap()
             mm.readFrom(rvi)
-            m.Set(typeSelect(key), mm)
+            m.Set(key, mm)
         }else if rvi.Kind() == reflect.Array || rvi.Kind() == reflect.Slice {
-       	 	m.Set(typeSelect(key), readFromArray(rvi))
+       	 	m.Set(key, readFromArray(rvi))
         }else{
-        	m.Set(typeSelect(key), typeSelect(val))
+        	m.Set(key, typeSelect(val))
         }
     }
     return nil
