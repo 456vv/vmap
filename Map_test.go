@@ -114,27 +114,33 @@ func Test_NewMap_IndexHas(t *testing.T){
     	a2.Set("a3-2", NewMap())
 	a1.Set("a2", a2)
 	a1.Set("a3", 123)
-
+	
 	m := NewMap()
 	m.Set("a1", a1)
 	val, ok := m.IndexHas("a1", "a2", "a3")
 	t.Log(val, ok)
 	//A3 true
-
+	
 	val, ok = m.IndexHas("a1", "a3", "a3")
 	t.Log(val, ok)
 	//<nil> false
-
+	
 	val, ok = m.IndexHas("a1", "a2", "a3-1")
-	t.Log(val, ok)
-	//{<nil> 0} true
+	m1 := val.(Map)
+	t.Log(m1.String(), ok)
+	//{} true
+	
+	val, ok = m.IndexHas("a1")
+	m2 := val.(*Map)
+	t.Log(m2.String(), ok)
+	//{"a2":{"a3":"A3","a3-1":{},"a3-2":{}},"a3":123} true
 
 	val, ok = m.IndexHas("a1", "a2", "a3-2")
 	t.Log(val, ok)
 	//map[] true
 
 	val.(*Map).Set("a4", "a4")
-
+	
 	val, ok = m.IndexHas("a1", "a2", "a3-2", "a4")
 	t.Log(val, ok)
 	//a4 true
@@ -161,18 +167,18 @@ func Test_NewMap_ReadAll(t *testing.T){
 }
 
 func Test_NewMap_Copy(t *testing.T){
-	a1 := NewMap()
 	a2 := NewMap()
 	a2.Set("a3", "A3")
 	a2.Set("a3-1", Map{})
 	a2.Set("a3-2", NewMap())
+	
+	a1 := NewMap()
 	a1.Set("a2", a2)
 
 	m := NewMap()
 	m.Copy(a1, true)
-
-	t.Log(m)
-	//map[a2:map[a3:A3 a3-1:{<nil> 0} a3-2:map[]]]
+	t.Log(m.String())
+	//{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}
 }
 
 
@@ -191,54 +197,52 @@ func Test_NewMap_MarshalJSONAndUnmarshalJSON(t *testing.T){
 	m := NewMap()
 	m.Set("a1", a1)
 	b, err := m.MarshalJSON()
-	t.Log(err)
-	//<nil>
-	if err == nil {
-		t.Log(string(b))
-		//{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}}
-
-		//这里重置了
-		m.Reset()
-		err = m.UnmarshalJSON(b)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, err = m.MarshalJSON()
-		t.Log(err)
-		//<nil>
-		if err == nil {
-			t.Log(string(b))
-			//{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}}
-		}
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Log(string(b))
+	//{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}}
+
+	//这里重置了
+	m.Reset()
+	err = m.UnmarshalJSON(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err = m.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(string(b))
+	//{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}}
+
 }
 
 
 func Test_NewMap_WriteToAndReadFrom(t *testing.T){
 	a2 := NewMap()
 	a2.Set("a3", "A3")
-	a2.Set("a3-1", Map{})
+	a2.Set("a3-1", &Map{})
 	a2.Set("a3-2", NewMap())
 	
 	tom := make(map[interface{}]interface{})
-	m := NewMap()
 	
 	a1 := NewMap()
 	a1.Set("a2", a2)
-	m.Set("a1", a1)
 	
-	a3 := []*Map{a1, a2}
-	m.Set("a3", a3)
+	m := NewMap()
+	m.Set("a1", a1)
+	m.Set("a3", []*Map{a1, a2})
 	err := m.WriteTo(tom)
 	if err != nil{
 		t.Fatal(err)
 	}
-	t.Log(tom)
-	//map[a1:map[a2:map[a3-2:map[] a3:A3 a3-1:{<nil> 0}]]]
-
 	//重置归零
 	m.Reset()
 	
+	t.Log(tom)
+	//map[a1:map[a2:map[a3-2:map[] a3:A3 a3-1:{<nil> 0}]]]
+
 	err = m.ReadFrom(tom)
 	if err != nil{
 		t.Fatal(err)
