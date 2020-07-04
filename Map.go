@@ -39,31 +39,31 @@ func NewMap() *Map {
 //要是你需要一个这样的功能，存在key键值，返回该key键值。如果不存在该key键值，返回一个新的key对应的Map。请使用 .GetNewMap 方法
 //	key interface{}     键名
 //	*Map                Map对象
-func (m *Map) New(key interface{}) *Map {
+func (T *Map) New(key interface{}) *Map {
     t := NewMap()
-    m.Set(key, t)
+    T.Set(key, t)
     return t
 }
 
 //GetNewMap 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
 //	key interface{}     键名
 //	*Map                Map对象
-func (m *Map) GetNewMap(key interface{}) *Map {
-    actual, ok := m.GetHas(key)
+func (T *Map) GetNewMap(key interface{}) *Map {
+    actual, ok := T.GetHas(key)
 	if ok {
 		if mm, ok := actual.(*Map); ok {
 			return mm
 		}
 	}
-	return m.New(key)
+	return T.New(key)
 }
 
 //GetNewMaps 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
 //他支持链式读取或创建，如果你想相独读取，可以使用 .Index 方法
 //	key ...interface{}     键名
 //	*Map                Map对象
-func (m *Map) GetNewMaps(keys ...interface{}) *Map {
-	tm := m
+func (T *Map) GetNewMaps(keys ...interface{}) *Map {
+	tm := T
 	for _, key := range keys {
 		tm = tm.GetNewMap(key)
 	}
@@ -72,48 +72,48 @@ func (m *Map) GetNewMaps(keys ...interface{}) *Map {
 
 //Len 长度
 //	int   长度
-func (m *Map) Len() int {
-    return m.length
+func (T *Map) Len() int {
+    return T.length
 }
 
 //Set 设置，如果你设置的值是Map，将会被强制初始化该值。这样避免读取并调用时候出错。
 //	key interface{}   键名
 //	val interface{}   值
-func (m *Map) Set(key, val interface{}) {
-	m.m.Store(key, val)
-	if !m.Has(key) {
-		m.keys = append(m.keys, key)
-		m.length++
+func (T *Map) Set(key, val interface{}) {
+	if !T.Has(key) {
+		T.keys = append(T.keys, key)
+		T.length++
 	}
+	T.m.Store(key, val)
 }
 
 
 // SetExpired 单个键值的有效期
 //	key interface{}		键名
 //	d time.Duration		时间
-func (m *Map) SetExpired(key interface{}, d time.Duration){
-	m.SetExpiredCall(key, d, nil)
+func (T *Map) SetExpired(key interface{}, d time.Duration){
+	T.SetExpiredCall(key, d, nil)
 }
 
 // SetExpiredCall 单个键值的有效期，过期后并调用函数
 //	key interface{}		键名
 //	d time.Duration		时间
 //	f func(interface)	函数
-func (m *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{})){
+func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{})){
 	//如果该Key不存在，则退出
-	if !m.Has(key) {
+	if !T.Has(key) {
 		return
 	}
 	
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	T.mu.Lock()
+	defer T.mu.Unlock()
 	
 	giveup := d == time.Duration(0)
 	//存在定时，使用定时。如果过期，则创建新的定时
-	if timer, ok := m.expired[key]; ok {
+	if timer, ok := T.expired[key]; ok {
 		if giveup {
 			timer.Stop()
-			delete(m.expired, key)
+			delete(T.expired, key)
 			return
 		}
 		if f != nil {
@@ -125,18 +125,18 @@ func (m *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{
 		timer.Stop()
 	}
 	if !giveup {
-		if m.expired == nil {
-			m.expired = make(map[interface{}]*timer)
+		if T.expired == nil {
+			T.expired = make(map[interface{}]*timer)
 		}
-		m.expired[key]= m.afterFunc(key, d, f)
+		T.expired[key]= T.afterFunc(key, d, f)
 	}
 }
-func (m *Map) afterFunc(key interface{}, d time.Duration, f func(interface{})) *timer{
+func (T *Map) afterFunc(key interface{}, d time.Duration, f func(interface{})) *timer{
 	k := key
 	t := &timer{}
 	t.f = f
 	t.t = time.AfterFunc(d, func(){
-		m.Del(k)
+		T.Del(k)
 	})
 	return t
 }
@@ -145,16 +145,16 @@ func (m *Map) afterFunc(key interface{}, d time.Duration, f func(interface{})) *
 //Get 读取
 //	key interface{}   读取值的键名
 //	interface{}       读取值
-func (m *Map) Get(key interface{}) interface{} {
-    val, _ := m.m.Load(key)
+func (T *Map) Get(key interface{}) interface{} {
+    val, _ := T.m.Load(key)
     return val
 }
 
 //Has 判断
 //	key interface{}   键名
 //	bool              判断，如果为true,判断存在。否则为flase
-func (m *Map) Has(key interface{}) bool {
-	for _, k := range m.keys {
+func (T *Map) Has(key interface{}) bool {
+	for _, k := range T.keys {
 		if reflect.DeepEqual(k, key) {
 			return true
 		}
@@ -166,16 +166,16 @@ func (m *Map) Has(key interface{}) bool {
 //	key interface{}   键名
 //	val interface{}   读取值
 //	ok bool           判断，如果为true,判断存在。否则为flase
-func (m *Map) GetHas(key interface{}) (val interface{}, ok bool) {
-    return m.m.Load(key)
+func (T *Map) GetHas(key interface{}) (val interface{}, ok bool) {
+    return T.m.Load(key)
 }
 
 //GetOrDefault 读取，如果不存，返回默认值
 //	key interface{}   	键名
 //	def interface{}		默认值
 //	val interface{}   	读取值
-func (m *Map) GetOrDefault(key interface{}, def interface{}) interface{} {
-	val, ok := m.m.Load(key)
+func (T *Map) GetOrDefault(key interface{}, def interface{}) interface{} {
+	val, ok := T.m.Load(key)
 	if !ok || reflect.ValueOf(&val).Elem().Kind() == reflect.Invalid {
 		return def
 	}
@@ -187,8 +187,8 @@ func (m *Map) GetOrDefault(key interface{}, def interface{}) interface{} {
 //      key ...interface{}        快速指定父子关系中的值，如 .Index("A", "B", "C")
 //    返：
 //      interface{}               读取值
-func (m *Map) Index(key ...interface{}) interface{} {
-    mv, _ := m.IndexHas(key...)
+func (T *Map) Index(key ...interface{}) interface{} {
+    mv, _ := T.IndexHas(key...)
     return mv
 }
 
@@ -204,58 +204,45 @@ func (m *Map) Index(key ...interface{}) interface{} {
 //      v, ok := m1.IndexHas("a", "b")
 //      fmt.Println(v, ok)
 //      //value true
-func (m *Map) IndexHas(key ...interface{}) (interface{}, bool) {
+func (T *Map) IndexHas(key ...interface{}) (interface{}, bool) {
     switch len(key){
     case 0:return nil, false
-    case 1:return m.m.Load(key[0])
+    case 1:
+    return T.m.Load(key[0])
+    default:
+    	mst, ok := T.m.Load(key[0])
+    	if ok {
+	    	if mt, ok := mst.(*Map); ok {
+	    		return mt.IndexHas(key[1:]...)
+	    	}
+    	}
+    	return nil, false
+    	
     }
-    var (
-        l		= len(key)-1
-        mt   	*Map = m
-        mst  	interface{}
-        ok   	bool
-    )
-	
-    for i, index := range key {
-        mst, ok = mt.m.Load(index)
-        if !ok {
-            return nil, false
-        }
-        if i == l {
-            break
-        }
-        switch mst.(type) {
-        case *Map:
-            mt = mst.(*Map)
-        default:
-            return nil, false
-        }
-    }
-    return mst, ok
 }
 
 
 //Del 删除
 //	key interface{}   键名
-func (m *Map) Del(key interface{}) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (T *Map) Del(key interface{}) {
+	T.mu.Lock()
+	defer T.mu.Unlock()
 	
 	//删除键值
 	var val interface{}
-    for i := 0; i < len(m.keys); i++ {
-        if reflect.DeepEqual(m.keys[i], key) {
-            m.keys = append(m.keys[:i], m.keys[i+1:]...)
-            m.length--
+    for i := 0; i < len(T.keys); i++ {
+        if reflect.DeepEqual(T.keys[i], key) {
+            T.keys = append(T.keys[:i], T.keys[i+1:]...)
+            T.length--
             i--
-            val = m.Get(key)
-			m.m.Delete(key)
+            val = T.Get(key)
+			T.m.Delete(key)
         }
     }
     
 	//停止定时并删除
-	if timer, ok := m.expired[key]; ok {
-		delete(m.expired, key)
+	if timer, ok := T.expired[key]; ok {
+		delete(T.expired, key)
 		timer.Stop()
 		if timer.f != nil {
 			go timer.f(val)
@@ -265,18 +252,18 @@ func (m *Map) Del(key interface{}) {
 
 //Dels 删除
 //	keys []interface{}   键名
-func (m *Map) Dels(keys []interface{}) {
+func (T *Map) Dels(keys []interface{}) {
 	for _, key := range keys {
-		m.Del(key)
+		T.Del(key)
     }
 }
 
 
 //ReadAll 读取所有
 //	interface{}   复制一份Map
-func (m *Map) ReadAll() interface{} {
+func (T *Map) ReadAll() interface{} {
     mm := make(map[interface{}]interface{})
-	m.m.Range(func(k, v interface{}) bool{
+	T.m.Range(func(k, v interface{}) bool{
         mm[k] = v
         return true
 	})
@@ -285,51 +272,40 @@ func (m *Map) ReadAll() interface{} {
 
 
 //Reset 重置归零
-func (m *Map) Reset() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (T *Map) Reset() {
+	T.mu.Lock()
+	defer T.mu.Unlock()
 	
     //停止所有定时
-    for key, timer := range m.expired {
+    for key, timer := range T.expired {
     	timer.Stop()
 		if timer.f != nil {
-			go timer.f(m.Get(key))
+			go timer.f(T.Get(key))
 		}
     }
-    m.expired	= make(map[interface{}]*timer)
-    m.keys		= m.keys[:0]
-    m.m		= sync.Map{}
-    m.length	= 0
+    T.expired	= make(map[interface{}]*timer)
+    T.keys		= T.keys[:0]
+    T.m		= sync.Map{}
+    T.length	= 0
 }
 
 //Copy 从 from 复制所有并写入到 m 中
 //	from *Map       Map对象
 //	error           错误
-func (m *Map) Copy(from *Map, over bool) {
+func (T *Map) Copy(from *Map, over bool) {
     from.m.Range(func(k, v interface{})bool{
-	    m.mu.Lock()
-		defer m.mu.Unlock()
-		if !m.Has(k) {
-			m.keys = append(m.keys, k)
-		}
+	    T.mu.Lock()
+		defer T.mu.Unlock()
         if vm, ok := v.(*Map); ok {
-        	
-            inf, isExist := m.m.LoadOrStore(k, NewMap())
-        	if tm, ok := inf.(*Map); ok {
-        		//双方都是Map类型
-            	tm.Copy(vm, over)
-        	}else if over && isExist {
-        		//如果已经存在
-        		//并设置了覆盖
+            if over || !T.Has(k) {
+        		//1，强制覆盖
+        		//2，不存在
         		tm := NewMap()
             	tm.Copy(vm, over)
-    			m.m.Store(k, tm)
-        	}
-        	
-        }else if over {
-            m.m.Store(k, v)
-        }else{
-        	m.m.LoadOrStore(k, v)
+    			T.Set(k, tm)
+            }
+        }else if over || !T.Has(k) {
+            T.Set(k, v)
         }
         return true
     })
@@ -338,8 +314,8 @@ func (m *Map) Copy(from *Map, over bool) {
 //MarshalJSON 转JSON
 //	[]byte    字节格式的json
 //	error     错误，格式无法压缩，导致 json.Marshal 发生错误。
-func (m *Map) MarshalJSON() ([]byte, error) {
-    var mj = m.marshalJSON()
+func (T *Map) MarshalJSON() ([]byte, error) {
+    var mj = T.marshalJSON()
     return json.Marshal(mj)
 }
 func arraySub(vs []interface{}) interface{}{
@@ -355,9 +331,9 @@ func arraySub(vs []interface{}) interface{}{
 	}
 	return subs
 }
-func (m *Map) marshalJSON() interface{} {
+func (T *Map) marshalJSON() interface{} {
     var mj = make(map[string]interface{})
-    m.m.Range(func(key, val interface{})bool{
+    T.m.Range(func(key, val interface{})bool{
     	k := fmt.Sprintf("%v", key)
         if vm, ok := val.(*Map); ok {
             mj[k] = vm.marshalJSON()
@@ -373,11 +349,11 @@ func (m *Map) marshalJSON() interface{} {
 
 //String 字符串
 //	string    字符串
-func (m *Map) String() string {
-    if m == nil {
+func (T *Map) String() string {
+    if T.length == 0 {
         return "{}"
     }
-    jsonStr, err := m.MarshalJSON()
+    jsonStr, err := T.MarshalJSON()
     if err != nil {
         return "{}"
     }
@@ -387,11 +363,11 @@ func (m *Map) String() string {
 //UnmarshalJSON JSON转Map，格式需要是 map[string]interface{}
 //	data []byte    字节格式的json
 //	error          错误，格式无法解压，导致 json.Unmarshal 发生错误。
-func (m *Map) UnmarshalJSON(data []byte) error {
+func (T *Map) UnmarshalJSON(data []byte) error {
     var mjs  = make(map[string]interface{})
     err := json.Unmarshal(data, &mjs)
     if err == nil {
-    	m.unmarshalJSON(mjs)
+    	T.unmarshalJSON(mjs)
     }
     return err
 }
@@ -418,21 +394,21 @@ func unarraySub(vs []interface{})interface{}{
 	return subs
 }
 
-func (m *Map) unmarshalJSON(mjvs map[string]interface{}) {
+func (T *Map) unmarshalJSON(mjvs map[string]interface{}) {
 	for k, mjv := range mjvs {
 		mjvtype := reflect.TypeOf(mjv)
 		if mjvtype.Kind() == reflect.Map {
    			if vt, ok := mjv.(map[string]interface{}); ok {
    				sub := NewMap()
    				sub.unmarshalJSON(vt)
-				m.Set(k, sub)
+				T.Set(k, sub)
 			}
 		}else if mjvtype.Kind() == reflect.Array || mjvtype.Kind() == reflect.Slice {
    			if vt, ok := mjv.([]interface{}); ok {
-				m.Set(k, unarraySub(vt))
+				T.Set(k, unarraySub(vt))
    			}
 		}else{
-			m.Set(k, mjv)
+			T.Set(k, mjv)
 		}
 	}
 }
@@ -441,15 +417,15 @@ func (m *Map) unmarshalJSON(mjvs map[string]interface{}) {
 //WriteTo 写入到 mm
 //	mm interface{}     写入到mm
 //	error              错误，mm类型不是map，发生错误。
-func (m *Map) WriteTo(mm interface{}) (err error) {
+func (T *Map) WriteTo(mm interface{}) (err error) {
     rv := inDirect( reflect.ValueOf(mm) )
     if rv.Kind() != reflect.Map {
         return fmt.Errorf("Map: 不支持此类型type(%v)", rv.Kind())
     }
-    return m.writeTo(rv)
+    return T.writeTo(rv)
 }
-func (m *Map) writeTo(rv reflect.Value) (err error) {
-    m.m.Range(func(key, val interface{}) bool{
+func (T *Map) writeTo(rv reflect.Value) (err error) {
+    T.m.Range(func(key, val interface{}) bool{
         if vm, ok := val.(*Map); ok {
             mm := make(map[interface{}]interface{})
             vm.writeTo(reflect.ValueOf(mm))
@@ -465,16 +441,14 @@ func (m *Map) writeTo(rv reflect.Value) (err error) {
 }
 
 func writeToArray(rv reflect.Value) reflect.Value {
-    Interface := reflect.TypeOf((*interface{})(nil)).Elem()
-	subs := reflect.MakeSlice(reflect.SliceOf(Interface), 0, 0)
+    NilInf := reflect.TypeOf((*interface{})(nil)).Elem()
+	subs := reflect.MakeSlice(reflect.SliceOf(NilInf), 0, 0)
 	for i:= 0;i<rv.Len();i++{
 		val := rv.Index(i)
-        rvi := reflect.Indirect(val)
+        rvi := inDirect(val)
 
-        	
         if vm, ok := val.Interface().(*Map); ok {
-
-            mmType := reflect.MapOf(Interface , Interface)
+            mmType := reflect.MapOf(NilInf , NilInf)
             mm := reflect.MakeMap(mmType)
             vm.writeTo(mm)
 			subs = reflect.Append(subs, mm)
@@ -490,20 +464,20 @@ func writeToArray(rv reflect.Value) reflect.Value {
 //ReadFrom 从mm中读取 map
 //	mm interface{}      从mm中读取
 //	error               错误，mm类型不是map，发生错误。
-func (m *Map) ReadFrom(mm interface{}) error {
+func (T *Map) ReadFrom(mm interface{}) error {
     rv := reflect.ValueOf(mm)
     rvi := inDirect( rv )
     if rvi.Kind() != reflect.Map {
         return fmt.Errorf("Map: 不支持此类型type(%v)", rvi.Kind())
     }
-    m.readFrom(rvi)
+    T.readFrom(rvi)
     return nil
 }
 func readFromArray(rv reflect.Value) []interface{}{
 	subs := make([]interface{}, 0)
 	for i:= 0;i<rv.Len();i++{
 		val := rv.Index(i)
-        rvi := reflect.Indirect(val)
+        rvi := inDirect(val)
 		if rvi.Kind()  == reflect.Map {
 			mm :=NewMap()
 			mm.readFrom(rvi)
@@ -517,20 +491,19 @@ func readFromArray(rv reflect.Value) []interface{}{
 	return subs
 }
 
-func (m *Map) readFrom(rv reflect.Value) error {
+func (T *Map) readFrom(rv reflect.Value) error {
     vs := rv.MapKeys()
     for _, key := range vs {
         val := rv.MapIndex(key)
-        rvi := reflect.Indirect(val)
-
+        rvi := inDirect(val)
         if rvi.Kind() == reflect.Map {
             mm    := NewMap()
             mm.readFrom(rvi)
-            m.Set(key, mm)
+            T.Set(typeSelect(key), mm)
         }else if rvi.Kind() == reflect.Array || rvi.Kind() == reflect.Slice {
-       	 	m.Set(key, readFromArray(rvi))
+       	 	T.Set(typeSelect(key), readFromArray(rvi))
         }else{
-        	m.Set(key, typeSelect(val))
+        	T.Set(typeSelect(key), typeSelect(val))
         }
     }
     return nil
@@ -538,6 +511,6 @@ func (m *Map) readFrom(rv reflect.Value) error {
 
 //遍历
 //	f func(key, value interface{}	遍历函数
-func (m *Map) Range(f func(key, value interface{}) bool){
-	m.m.Range(f)
+func (T *Map) Range(f func(key, value interface{}) bool){
+	T.m.Range(f)
 }
