@@ -80,6 +80,9 @@ func (T *Map) Len() int {
 //	key interface{}   键名
 //	val interface{}   值
 func (T *Map) Set(key, val interface{}) {
+	T.mu.Lock()
+	defer T.mu.Unlock()
+
 	if !T.Has(key) {
 		T.keys = append(T.keys, key)
 		T.length++
@@ -100,15 +103,15 @@ func (T *Map) SetExpired(key interface{}, d time.Duration){
 //	d time.Duration		时间
 //	f func(interface)	函数
 func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{})){
+	T.mu.Lock()
+	defer T.mu.Unlock()
+
 	//如果该Key不存在，则退出
 	if !T.Has(key) {
 		return
 	}
 	
-	T.mu.Lock()
-	defer T.mu.Unlock()
-	
-	giveup := d == time.Duration(0)
+	giveup := d == 0
 	//存在定时，使用定时。如果过期，则创建新的定时
 	if timer, ok := T.expired[key]; ok {
 		if giveup {
@@ -230,11 +233,11 @@ func (T *Map) Del(key interface{}) {
 	
 	//删除键值
 	var val interface{}
-    for i := 0; i < len(T.keys); i++ {
+    for j := len(T.keys); j>0; j-- {
+    	i := j-1
         if reflect.DeepEqual(T.keys[i], key) {
             T.keys = append(T.keys[:i], T.keys[i+1:]...)
             T.length--
-            i--
             val = T.Get(key)
 			T.m.Delete(key)
         }
@@ -294,8 +297,6 @@ func (T *Map) Reset() {
 //	error           错误
 func (T *Map) Copy(from *Map, over bool) {
     from.m.Range(func(k, v interface{})bool{
-	    T.mu.Lock()
-		defer T.mu.Unlock()
         if vm, ok := v.(*Map); ok {
             if over || !T.Has(k) {
         		//1，强制覆盖
