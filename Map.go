@@ -101,7 +101,7 @@ func (T *Map) SetExpired(key interface{}, d time.Duration){
 // SetExpiredCall 单个键值的有效期，过期后并调用函数
 //	key interface{}		键名
 //	d time.Duration		时间
-//	f func(interface)	函数
+//	f func(interface)	函数,过期调用，键删除调用
 func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{})){
 	T.mu.Lock()
 	defer T.mu.Unlock()
