@@ -101,7 +101,7 @@ func (T *Map) SetExpired(key interface{}, d time.Duration){
 // SetExpiredCall 单个键值的有效期，过期后并调用函数
 //	key interface{}		键名
 //	d time.Duration		时间
-//	f func(interface)	函数
+//	f func(interface)	函数,过期调用，键删除调用
 func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{})){
 	T.mu.Lock()
 	defer T.mu.Unlock()
@@ -273,7 +273,6 @@ func (T *Map) ReadAll() interface{} {
     return mm
 }
 
-
 //Reset 重置归零
 func (T *Map) Reset() {
 	T.mu.Lock()
@@ -286,10 +285,16 @@ func (T *Map) Reset() {
 			go timer.f(T.Get(key))
 		}
     }
+    
+    //删除存存储
+    for _, key := range T.keys {
+    	T.m.Delete(key)
+    }
+    
     T.expired	= make(map[interface{}]*timer)
-    T.keys		= T.keys[:0]
-    T.m		= sync.Map{}
+    T.keys		= T.keys[:0:0]
     T.length	= 0
+    //T.m			= sync.Map{}
 }
 
 //Copy 从 from 复制所有并写入到 m 中
@@ -419,7 +424,7 @@ func (T *Map) unmarshalJSON(mjvs map[string]interface{}) {
 //	mm interface{}     写入到mm
 //	error              错误，mm类型不是map，发生错误。
 func (T *Map) WriteTo(mm interface{}) (err error) {
-    rv := inDirect( reflect.ValueOf(mm) )
+    rv := inDirect( reflect.ValueOf(&mm) )
     if rv.Kind() != reflect.Map {
         return fmt.Errorf("Map: 不支持此类型type(%v)", rv.Kind())
     }
@@ -466,12 +471,11 @@ func writeToArray(rv reflect.Value) reflect.Value {
 //	mm interface{}      从mm中读取
 //	error               错误，mm类型不是map，发生错误。
 func (T *Map) ReadFrom(mm interface{}) error {
-    rv := reflect.ValueOf(mm)
-    rvi := inDirect( rv )
-    if rvi.Kind() != reflect.Map {
-        return fmt.Errorf("Map: 不支持此类型type(%v)", rvi.Kind())
+    rv := inDirect( reflect.ValueOf(&mm) )
+    if rv.Kind() != reflect.Map {
+        return fmt.Errorf("Map: 不支持此类型type(%v)", rv.Kind())
     }
-    T.readFrom(rvi)
+    T.readFrom(rv)
     return nil
 }
 func readFromArray(rv reflect.Value) []interface{}{
