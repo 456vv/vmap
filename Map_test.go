@@ -3,6 +3,7 @@ package vmap
 import (
 	"testing"
 	"time"
+	"reflect"
 )
 
 
@@ -164,6 +165,32 @@ func Test_NewMap_ReadAll(t *testing.T){
 	var rall = m.ReadAll()
 	t.Log(rall)
 	//map[a1:map[a2:map[a3:A3 a3-1:{<nil> 0} a3-2:map[]]]]
+}
+
+func Test_NewMap_Keys(t *testing.T) {
+	m := NewMap()
+	m.Set("a3", "A3")
+	m.Set("a3-1", Map{})
+	m.Set("a3-2", NewMap())
+	ks := m.Keys()
+	if !reflect.DeepEqual(ks, m.keys) {
+		t.Fatal("error: 返回的 keys 不完整")
+	}
+}
+func Test_NewMap_Values(t *testing.T) {
+	avs := []interface{}{"a1", "a2", "a3"}
+	m := NewMap()
+	for _, v := range avs {
+		m.Set(v, v)
+	}
+	vs := m.Values()
+	if !reflect.DeepEqual(vs, avs) {
+		t.Fatal("error: 返回的 value 不完整")
+	}
+	ks := m.Keys()
+	if !reflect.DeepEqual(ks, avs) {
+		t.Fatal("error: 返回的 keys 不完整")
+	}
 }
 
 func Test_NewMap_Copy(t *testing.T){

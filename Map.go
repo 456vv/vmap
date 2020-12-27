@@ -273,6 +273,31 @@ func (T *Map) ReadAll() interface{} {
     return mm
 }
 
+//Keys 以列表形式返回map中的所有键名
+//	[]interface{}	所有键名
+func (T *Map) Keys() []interface{} {
+	T.mu.Lock()
+	defer T.mu.Unlock()
+	
+	var ks = make([]interface{}, T.length)
+	copy(ks[:], T.keys[:])
+	return ks
+}
+
+//Values 以列表形式返回map中的所有值
+//	[]interface{}	所有值
+func (T *Map) Values() []interface{} {
+	T.mu.Lock()
+	defer T.mu.Unlock()
+	
+	var vs = make([]interface{}, 0)
+	for _, key := range T.keys {
+		val, _ := T.m.Load(key)
+		vs = append(vs, val)
+	}
+	return vs
+}
+
 //Reset 重置归零
 func (T *Map) Reset() {
 	T.mu.Lock()
