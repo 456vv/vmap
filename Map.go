@@ -266,8 +266,12 @@ func (T *Map) Dels(keys []interface{}) {
 //	interface{}   复制一份Map
 func (T *Map) ReadAll() interface{} {
     mm := make(map[interface{}]interface{})
-	T.m.Range(func(k, v interface{}) bool{
-        mm[k] = v
+	T.m.Range(func(k, inf interface{}) bool{
+		if mv, ok := inf.(*Map); ok {
+			mm[k]=mv.ReadAll()
+			return true
+		}
+        mm[k] = inf
         return true
 	})
     return mm
@@ -449,7 +453,7 @@ func (T *Map) unmarshalJSON(mjvs map[string]interface{}) {
 //	mm interface{}     写入到mm
 //	error              错误，mm类型不是map，发生错误。
 func (T *Map) WriteTo(mm interface{}) (err error) {
-    rv := inDirect( reflect.ValueOf(&mm) )
+    rv := inDirect( reflect.ValueOf(mm) )
     if rv.Kind() != reflect.Map {
         return fmt.Errorf("Map: 不支持此类型type(%v)", rv.Kind())
     }
@@ -459,10 +463,10 @@ func (T *Map) writeTo(rv reflect.Value) (err error) {
     T.m.Range(func(key, val interface{}) bool{
         if vm, ok := val.(*Map); ok {
             mm := make(map[interface{}]interface{})
-            vm.writeTo(reflect.ValueOf(mm))
+            vm.writeTo(reflect.ValueOf(&mm).Elem())
             rv.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(mm))
-        }else if _, ok := val.([]*Map); ok {
-            rv.SetMapIndex(reflect.ValueOf(key), writeToArray(reflect.ValueOf(val)))
+        }else if vms, ok := val.([]*Map); ok {
+            rv.SetMapIndex(reflect.ValueOf(key), writeToArray(reflect.ValueOf(&vms).Elem()))
         }else{
             rv.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(val))
         }
