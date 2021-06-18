@@ -9,14 +9,13 @@ import (
 )
 
 type timer struct{
-	t	*time.Timer
-	f	func(interface{})
+	*time.Timer
+	fn		func(interface{})
 }
-func (t *timer) Reset(d time.Duration) bool{
-	return t.t.Reset(d)
-}
-func (t *timer) Stop() bool {
-	return t.t.Stop()
+func (T *timer) exec(val interface{}){
+	if T.fn != nil {
+		T.fn(val)
+	}
 }
 
 // Map 推荐使用NewMap来规范的创建，这样可避免不必要的错误。
@@ -120,7 +119,7 @@ func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{
 			return
 		}
 		if f != nil {
-			timer.f = f
+			timer.fn = f
 		}
 		if timer.Reset(d) {
 			return
@@ -134,12 +133,12 @@ func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{
 		T.expired[key]= T.afterFunc(key, d, f)
 	}
 }
+
 func (T *Map) afterFunc(key interface{}, d time.Duration, f func(interface{})) *timer{
-	k := key
-	t := &timer{}
-	t.f = f
-	t.t = time.AfterFunc(d, func(){
-		T.Del(k)
+	t := new(timer)
+	t.fn = f
+	t.Timer = time.AfterFunc(d, func(){
+		T.Del(key)
 	})
 	return t
 }
@@ -242,14 +241,12 @@ func (T *Map) Del(key interface{}) {
 			T.m.Delete(key)
         }
     }
-    
+	
 	//停止定时并删除
 	if timer, ok := T.expired[key]; ok {
 		delete(T.expired, key)
 		timer.Stop()
-		if timer.f != nil {
-			go timer.f(val)
-		}
+		go timer.exec(val)
 	}
 }
 
@@ -310,9 +307,7 @@ func (T *Map) Reset() {
     //停止所有定时
     for key, timer := range T.expired {
     	timer.Stop()
-		if timer.f != nil {
-			go timer.f(T.Get(key))
-		}
+		go timer.exec(T.Get(key))
     }
     
     //删除存存储
