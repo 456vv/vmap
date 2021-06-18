@@ -210,7 +210,7 @@ func (T *Map) IndexHas(key ...interface{}) (interface{}, bool) {
     switch len(key){
     case 0:return nil, false
     case 1:
-    return T.m.Load(key[0])
+    	return T.m.Load(key[0])
     default:
     	mst, ok := T.m.Load(key[0])
     	if ok {
@@ -426,6 +426,10 @@ func unarraySub(vs []interface{})interface{}{
 
 func (T *Map) unmarshalJSON(mjvs map[string]interface{}) {
 	for k, mjv := range mjvs {
+		if mjv == nil {
+			T.Set(k, mjv)
+			continue
+		}
 		mjvtype := reflect.TypeOf(mjv)
 		if mjvtype.Kind() == reflect.Map {
    			if vt, ok := mjv.(map[string]interface{}); ok {

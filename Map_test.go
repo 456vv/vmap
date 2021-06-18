@@ -204,12 +204,13 @@ func Test_NewMap_Copy(t *testing.T){
 
 	m := NewMap()
 	m.Copy(a1, true)
-	t.Log(m.String())
-	//{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}
+	if m.String() != `{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}` {
+		t.Fatal("结果不相等")
+	}
 }
 
 
-func Test_NewMap_MarshalJSONAndUnmarshalJSON(t *testing.T){
+func Test_NewMap_MarshalJSONAndUnmarshalJSON_1(t *testing.T){
 	a1 := NewMap()
 	a2 := NewMap()
 	a2.Set("a3", "A3")
@@ -227,8 +228,9 @@ func Test_NewMap_MarshalJSONAndUnmarshalJSON(t *testing.T){
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(string(b))
-	//{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}}
+	if string(b) != `{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}},"a4":[{}]}}` {
+		t.Fatal("结果不相等")
+	}
 
 	//这里重置了
 	m.Reset()
@@ -240,11 +242,21 @@ func Test_NewMap_MarshalJSONAndUnmarshalJSON(t *testing.T){
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(string(b))
-	//{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}}
+	if string(b) != `{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}},"a4":[{}]}}` {
+		t.Fatal("结果不相等")
+	}
 
 }
-
+func Test_NewMap_MarshalJSONAndUnmarshalJSON_2(t *testing.T){
+	m := NewMap()
+	err := m.UnmarshalJSON([]byte(`{"c":400,"a":"a","b":null,"d":[null,"d1",20,30.1]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.String() != `{"a":"a","b":null,"c":400,"d":[null,"d1",20,30.1]}` {
+		t.Fatal("结果不相等")
+	}
+}
 
 func Test_NewMap_WriteToAndReadFrom(t *testing.T){
 	a2 := NewMap()
@@ -274,8 +286,9 @@ func Test_NewMap_WriteToAndReadFrom(t *testing.T){
 	if err != nil{
 		t.Fatal(err)
 	}
-	t.Log(m)
-
+	if m.String() != `{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}},"a3":[{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}},{"a3":"A3","a3-1":{},"a3-2":{}}]}` {
+		t.Fatal("结果不相等")
+	}
 }
 
 
