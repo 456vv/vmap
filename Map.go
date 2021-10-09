@@ -9,14 +9,13 @@ import (
 )
 
 type timer struct{
-	t	*time.Timer
-	f	func(interface{})
+	*time.Timer
+	fn		func(interface{})
 }
-func (t *timer) Reset(d time.Duration) bool{
-	return t.t.Reset(d)
-}
-func (t *timer) Stop() bool {
-	return t.t.Stop()
+func (T *timer) exec(val interface{}){
+	if T.fn != nil {
+		T.fn(val)
+	}
 }
 
 // Map 推荐使用NewMap来规范的创建，这样可避免不必要的错误。
@@ -120,7 +119,7 @@ func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{
 			return
 		}
 		if f != nil {
-			timer.f = f
+			timer.fn = f
 		}
 		if timer.Reset(d) {
 			return
@@ -134,12 +133,12 @@ func (T *Map) SetExpiredCall(key interface{}, d time.Duration, f func(interface{
 		T.expired[key]= T.afterFunc(key, d, f)
 	}
 }
+
 func (T *Map) afterFunc(key interface{}, d time.Duration, f func(interface{})) *timer{
-	k := key
-	t := &timer{}
-	t.f = f
-	t.t = time.AfterFunc(d, func(){
-		T.Del(k)
+	t := new(timer)
+	t.fn = f
+	t.Timer = time.AfterFunc(d, func(){
+		T.Del(key)
 	})
 	return t
 }
@@ -211,7 +210,7 @@ func (T *Map) IndexHas(key ...interface{}) (interface{}, bool) {
     switch len(key){
     case 0:return nil, false
     case 1:
-    return T.m.Load(key[0])
+    	return T.m.Load(key[0])
     default:
     	mst, ok := T.m.Load(key[0])
     	if ok {
@@ -242,14 +241,12 @@ func (T *Map) Del(key interface{}) {
 			T.m.Delete(key)
         }
     }
-    
+	
 	//停止定时并删除
 	if timer, ok := T.expired[key]; ok {
 		delete(T.expired, key)
 		timer.Stop()
-		if timer.f != nil {
-			go timer.f(val)
-		}
+		go timer.exec(val)
 	}
 }
 
@@ -266,11 +263,40 @@ func (T *Map) Dels(keys []interface{}) {
 //	interface{}   复制一份Map
 func (T *Map) ReadAll() interface{} {
     mm := make(map[interface{}]interface{})
-	T.m.Range(func(k, v interface{}) bool{
-        mm[k] = v
+	T.m.Range(func(k, inf interface{}) bool{
+		if mv, ok := inf.(*Map); ok {
+			mm[k]=mv.ReadAll()
+			return true
+		}
+        mm[k] = inf
         return true
 	})
     return mm
+}
+
+//Keys 以列表形式返回map中的所有键名
+//	[]interface{}	所有键名
+func (T *Map) Keys() []interface{} {
+	T.mu.Lock()
+	defer T.mu.Unlock()
+	
+	var ks = make([]interface{}, T.length)
+	copy(ks[:], T.keys[:])
+	return ks
+}
+
+//Values 以列表形式返回map中的所有值
+//	[]interface{}	所有值
+func (T *Map) Values() []interface{} {
+	T.mu.Lock()
+	defer T.mu.Unlock()
+	
+	var vs = make([]interface{}, 0)
+	for _, key := range T.keys {
+		val, _ := T.m.Load(key)
+		vs = append(vs, val)
+	}
+	return vs
 }
 
 //Reset 重置归零
@@ -281,9 +307,7 @@ func (T *Map) Reset() {
     //停止所有定时
     for key, timer := range T.expired {
     	timer.Stop()
-		if timer.f != nil {
-			go timer.f(T.Get(key))
-		}
+		go timer.exec(T.Get(key))
     }
     
     //删除存存储
@@ -402,6 +426,10 @@ func unarraySub(vs []interface{})interface{}{
 
 func (T *Map) unmarshalJSON(mjvs map[string]interface{}) {
 	for k, mjv := range mjvs {
+		if mjv == nil {
+			T.Set(k, mjv)
+			continue
+		}
 		mjvtype := reflect.TypeOf(mjv)
 		if mjvtype.Kind() == reflect.Map {
    			if vt, ok := mjv.(map[string]interface{}); ok {
@@ -424,7 +452,7 @@ func (T *Map) unmarshalJSON(mjvs map[string]interface{}) {
 //	mm interface{}     写入到mm
 //	error              错误，mm类型不是map，发生错误。
 func (T *Map) WriteTo(mm interface{}) (err error) {
-    rv := inDirect( reflect.ValueOf(&mm) )
+    rv := inDirect( reflect.ValueOf(mm) )
     if rv.Kind() != reflect.Map {
         return fmt.Errorf("Map: 不支持此类型type(%v)", rv.Kind())
     }
@@ -434,10 +462,10 @@ func (T *Map) writeTo(rv reflect.Value) (err error) {
     T.m.Range(func(key, val interface{}) bool{
         if vm, ok := val.(*Map); ok {
             mm := make(map[interface{}]interface{})
-            vm.writeTo(reflect.ValueOf(mm))
+            vm.writeTo(reflect.ValueOf(&mm).Elem())
             rv.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(mm))
-        }else if _, ok := val.([]*Map); ok {
-            rv.SetMapIndex(reflect.ValueOf(key), writeToArray(reflect.ValueOf(val)))
+        }else if vms, ok := val.([]*Map); ok {
+            rv.SetMapIndex(reflect.ValueOf(key), writeToArray(reflect.ValueOf(&vms).Elem()))
         }else{
             rv.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(val))
         }

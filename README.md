@@ -22,6 +22,8 @@ func (m *Map) Del(key interface{})                           // 删除
 func (m *Map) Dels(key []interface{})                        // 批量删除
 func (m *Map) ReadAll() interface{}                          // 读取所有
 func (m *Map) Range(f func(key, value interface{}) bool)     // 遍历，返回true继续，否则退出
+func (m *Map) Keys() []interface{}                           // Map中的所有键名
+func (m *Map) Values() []interface{}                         // Map中的所有值
 func (m *Map) Reset()                                        // 重置
 func (m *Map) Copy(from *Map)                                // 复制，从 from 复制写入到m
 func (m *Map) MarshalJSON() ([]byte, error)                  // 编码JSON
