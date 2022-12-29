@@ -1,21 +1,19 @@
 package vmap
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
-	"reflect"
 )
 
-
-
-func Test_New(t *testing.T){
+func Test_New(t *testing.T) {
 	m := NewMap()
-	m.Set("1","1")
-	m.New("1")
-	if !m.Has("1") {
+	m.New("k")
+	if !m.Has("k") {
 		t.Fatalf("错误，无法写入")
 	}
-	inf, ok := m.GetHas("1")
+	inf, ok := m.GetHas("k")
 	if !ok {
 		t.Fatalf("错误，无法读取")
 	}
@@ -23,79 +21,75 @@ func Test_New(t *testing.T){
 		t.Fatalf("错误，无法转换")
 	}
 }
-func Test_NewMap(t *testing.T){
-	type a struct{}
-	tests := [][]interface{}{
-		{"a", "b", true},
-		{"c", "d", true},
-		{"e", NewMap(), true},
-		{"f", a{}, true},
+
+func Test_Set(t *testing.T) {
+	tests := map[string]any{
+		"a": "b",
+		"c": "d",
+		"e": NewMap(),
+		"f": struct{}{},
 	}
 	m := NewMap()
-	for _, v := range tests {
-		m.Set(v[0], v[1])
-		val, ok := m.IndexHas(v[0])
-		if v[1] != val || v[2] != ok {
-			t.Fatalf("写入的键名(%v)=值(%v)，判断(%v)。返回的值(%v)，判断(%v)", v[0], v[1], v[2], val, ok)
+	for k, v := range tests {
+		m.Set(k, v)
+		val, ok := m.IndexHas(k)
+		if val != v || !ok {
+			t.Fatalf("写入的键名(%v)=值(%v)，返回的值(%v)", k, v, val)
 		}
 	}
 }
 
-
-func Test_SetExpired(t *testing.T){
+func Test_SetExpired(t *testing.T) {
 	a := NewMap()
-	a.Set("1", "1")
-	a.SetExpired("1", time.Second)
-	time.Sleep(time.Second*2)
-	if a.Has("1") {
-		t.Fatalf("错误，无法删除干静 1")
-	}
-	if _, ok := a.GetHas("1"); ok {
+	a.Set("k", "v")
+	a.SetExpired("k", time.Second)
+	time.Sleep(time.Second * 2)
+
+	if _, ok := a.GetHas("k"); ok || a.Has("k") {
 		t.Fatalf("错误，无法删除干静 2")
 	}
-	
 }
 
-func Test_SetExpiredCall(t *testing.T){
+func Test_SetExpiredCall(t *testing.T) {
 	var err int = 1
 	a := NewMap()
-	
-	a.Set("1", "1")
-	a.SetExpired("1", time.Second)
-	time.Sleep(time.Second*2)
-	if a.Has("1") {
+
+	a.Set("k", "v")
+	a.SetExpired("k", time.Second)
+	time.Sleep(time.Second * 2)
+
+	if a.Has("k") {
 		t.Fatalf("错误，过期无法删除")
 	}
-	
-	a.Set("1", "1")
-	a.SetExpiredCall("1", time.Second, func (inf interface{}){
-		if v, ok := inf.(string); ok && v == "1" {
+
+	a.Set("k", "v")
+	a.SetExpiredCall("k", time.Second, func(inf any) {
+		if v, ok := inf.(string); ok && v == "v" {
 			err = 0
 		}
 	})
-	time.Sleep(time.Second*2)
+	time.Sleep(time.Second * 2)
+
 	if err == 1 {
 		t.Fatalf("错误，无法过期删除")
 	}
-	if a.Has("1") {
-		t.Fatalf("错误，无法删除干静 1")
+	if _, ok := a.GetHas("k"); ok || a.Has("k") {
+		t.Fatalf("错误，无法删除干静")
 	}
-	if _, ok := a.GetHas("1"); ok {
-		t.Fatalf("错误，无法删除干静 2")
-	}
-	
 }
-func Test_Reset(t *testing.T){
+
+func Test_Reset(t *testing.T) {
 	var err int = 1
 	a := NewMap()
-	a.Set("1", "1")
-	a.SetExpiredCall("1", time.Second, func (inf interface{}){
-		if v, ok := inf.(string); ok && v == "1" {
+	a.Set("k", "v")
+	a.SetExpiredCall("k", time.Second, func(inf any) {
+		if v, ok := inf.(string); ok && v == "v" {
 			err = 0
 		}
 	})
 	a.Reset()
 	time.Sleep(time.Second)
+
 	if err == 1 {
 		t.Fatalf("错误，无法清空 1")
 	}
@@ -107,78 +101,44 @@ func Test_Reset(t *testing.T){
 	}
 }
 
-func Test_NewMap_IndexHas(t *testing.T){
-	a1 := NewMap()
-    	a2 := NewMap()
-    	a2.Set("a3", "A3")
-    	a2.Set("a3-1", Map{})
-    	a2.Set("a3-2", NewMap())
-	a1.Set("a2", a2)
-	a1.Set("a3", 123)
-	
-	m := NewMap()
-	m.Set("a1", a1)
-	val, ok := m.IndexHas("a1", "a2", "a3")
-	t.Log(val, ok)
-	//A3 true
-	
-	val, ok = m.IndexHas("a1", "a3", "a3")
-	t.Log(val, ok)
-	//<nil> false
-	
-	val, ok = m.IndexHas("a1", "a2", "a3-1")
-	m1 := val.(Map)
-	t.Log(m1.String(), ok)
-	//{} true
-	
-	val, ok = m.IndexHas("a1")
-	m2 := val.(*Map)
-	t.Log(m2.String(), ok)
-	//{"a2":{"a3":"A3","a3-1":{},"a3-2":{}},"a3":123} true
+func Test_NewMap_IndexHas(t *testing.T) {
+	a := NewMap()
+	a.GetNewMap("b").GetNewMap("c").Set("d", 1)
 
-	val, ok = m.IndexHas("a1", "a2", "a3-2")
-	t.Log(val, ok)
-	//map[] true
-
-	val.(*Map).Set("a4", "a4")
-	
-	val, ok = m.IndexHas("a1", "a2", "a3-2", "a4")
-	t.Log(val, ok)
-	//a4 true
-
-	val, ok = m.IndexHas("a1", "a4", "a3-2", "a5")
-	t.Log(val, ok)
-	//<nil> false
+	val, ok := a.IndexHas("b", "c", "d")
+	if !ok && val != 1 {
+		t.Fatal("error")
+	}
 }
 
-
-func Test_NewMap_ReadAll(t *testing.T){
-	a1 := NewMap()
-	a2 := NewMap()
-	a2.Set("a3", "A3")
-	a2.Set("a3-1", Map{})
-	a2.Set("a3-2", NewMap())
-	a1.Set("a2", a2)
+func Test_NewMap_ReadAll(t *testing.T) {
+	a := NewMap()
+	b := a.GetNewMap("b")
+	b.Set("1", "1")
+	b.Set("2", Map{})
+	b.Set("3", NewMap())
 
 	m := NewMap()
-	m.Set("a1", a1)
-	var rall = m.ReadAll()
-	t.Log(rall)
-	//map[a1:map[a2:map[a3:A3 a3-1:{<nil> 0} a3-2:map[]]]]
+	m.Set("a", a)
+	all := m.ReadAll()
+	if s := fmt.Sprint(all); s != "map[a:map[b:map[1:1 2:{{{0 0} {<nil>} map[] 0} map[] {0 0} [] 0} 3:map[]]]]" {
+		t.Fatal("error")
+	}
 }
 
 func Test_NewMap_Keys(t *testing.T) {
 	m := NewMap()
-	m.Set("a3", "A3")
-	m.Set("a3-1", Map{})
-	m.Set("a3-2", NewMap())
+	m.Set("1", "1")
+	m.Set("2", Map{})
+	m.Set("3", NewMap())
 	ks := m.Keys()
 	if !reflect.DeepEqual(ks, m.keys) {
 		t.Fatal("error: 返回的 keys 不完整")
 	}
 }
+
 func Test_NewMap_Values(t *testing.T) {
-	avs := []interface{}{"a1", "a2", "a3"}
+	avs := []any{"1", "2", "3"}
 	m := NewMap()
 	for _, v := range avs {
 		m.Set(v, v)
@@ -193,61 +153,61 @@ func Test_NewMap_Values(t *testing.T) {
 	}
 }
 
-func Test_NewMap_Copy(t *testing.T){
-	a2 := NewMap()
-	a2.Set("a3", "A3")
-	a2.Set("a3-1", Map{})
-	a2.Set("a3-2", NewMap())
-	
-	a1 := NewMap()
-	a1.Set("a2", a2)
+func Test_NewMap_Copy(t *testing.T) {
+	a := NewMap()
+	a.Set("1", "1")
+	a.Set("2", Map{})
+	a.Set("3", NewMap())
+
+	b := NewMap()
+	b.Set("a", a)
 
 	m := NewMap()
-	m.Copy(a1, true)
-	if m.String() != `{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}}` {
+	m.Copy(b, true)
+	if m.String() != `{"a":{"1":"1","2":{},"3":{}}}` {
 		t.Fatal("结果不相等")
 	}
 }
 
-
-func Test_NewMap_MarshalJSONAndUnmarshalJSON_1(t *testing.T){
-	a1 := NewMap()
-	a2 := NewMap()
-	a2.Set("a3", "A3")
-	a2.Set("a3-1", Map{})
-	a2.Set("a3-2", NewMap())
-	a1.Set("a2", a2)
-	
-	a4 := make([]*Map, 0)
-	a4 = append(a4, NewMap())
-	a1.Set("a4", a4)
-
+func Test_NewMap_MarshalJSONAndUnmarshalJSON_1(t *testing.T) {
 	m := NewMap()
-	m.Set("a1", a1)
-	b, err := m.MarshalJSON()
+
+	a := m.GetNewMap("a")
+	a.Set("1", "1")
+	a.Set("2", Map{})
+	a.Set("3", NewMap())
+
+	b := a.GetNewMap("b")
+
+	var c []*Map
+	c = append(c, NewMap())
+	b.Set("c", c)
+
+	by, err := m.MarshalJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(b) != `{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}},"a4":[{}]}}` {
+
+	if string(by) != `{"a":{"1":"1","2":{},"3":{},"b":{"c":[{}]}}}` {
 		t.Fatal("结果不相等")
 	}
 
-	//这里重置了
-	m.Reset()
-	err = m.UnmarshalJSON(b)
+	m.Reset() // 这里重置了
+	err = m.UnmarshalJSON(by)
 	if err != nil {
 		t.Fatal(err)
-	}
-	b, err = m.MarshalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != `{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}},"a4":[{}]}}` {
-		t.Fatal("结果不相等")
 	}
 
+	by, err = m.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(by) != `{"a":{"1":"1","2":{},"3":{},"b":{"c":[{}]}}}` {
+		t.Fatal("结果不相等")
+	}
 }
-func Test_NewMap_MarshalJSONAndUnmarshalJSON_2(t *testing.T){
+
+func Test_NewMap_MarshalJSONAndUnmarshalJSON_2(t *testing.T) {
 	m := NewMap()
 	err := m.UnmarshalJSON([]byte(`{"c":400,"a":"a","b":null,"d":[null,"d1",20,30.1]}`))
 	if err != nil {
@@ -258,79 +218,32 @@ func Test_NewMap_MarshalJSONAndUnmarshalJSON_2(t *testing.T){
 	}
 }
 
-func Test_NewMap_WriteToAndReadFrom(t *testing.T){
-	a2 := NewMap()
-	a2.Set("a3", "A3")
-	a2.Set("a3-1", &Map{})
-	a2.Set("a3-2", NewMap())
-	
-	tom := make(map[interface{}]interface{})
-	
-	a1 := NewMap()
-	a1.Set("a2", a2)
-	
-	m := NewMap()
-	m.Set("a1", a1)
-	m.Set("a3", []*Map{a1, a2})
-	err := m.WriteTo(tom)
-	if err != nil{
-		t.Fatal(err)
-	}
-	//重置归零
-	m.Reset()
-	
-	t.Log(tom)
-	//map[a1:map[a2:map[a3-2:map[] a3:A3 a3-1:{<nil> 0}]]]
+func Test_NewMap_WriteToAndReadFrom(t *testing.T) {
+	a := NewMap()
+	a.Set("1", "1")
+	a.Set("2", &Map{})
+	a.Set("3", NewMap())
 
-	err = m.ReadFrom(tom)
-	if err != nil{
+	b := NewMap()
+	b.Set("a", a)
+
+	m := NewMap()
+	m.Set("b", b)
+	m.Set("c", []*Map{b, a})
+
+	tom := make(map[any]any)
+	if err := m.WriteTo(tom); err != nil {
 		t.Fatal(err)
 	}
-	if m.String() != `{"a1":{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}},"a3":[{"a2":{"a3":"A3","a3-1":{},"a3-2":{}}},{"a3":"A3","a3-1":{},"a3-2":{}}]}` {
+
+	// 重置归零
+	m.Reset()
+
+	if err := m.ReadFrom(tom); err != nil {
+		t.Fatal(err)
+	}
+
+	if m.String() != `{"b":{"a":{"1":"1","2":{},"3":{}}},"c":[{"a":{"1":"1","2":{},"3":{}}},{"1":"1","2":{},"3":{}}]}` {
 		t.Fatal("结果不相等")
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

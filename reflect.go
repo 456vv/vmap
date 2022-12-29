@@ -1,67 +1,70 @@
 package vmap
+
 import (
-    "reflect"
+	"reflect"
 )
 
-//TypeSelect 类型选择
-//    参：
-//      v reflect.Value        映射一种未知类型的变量
-//    返：
-//      interface{}            读出v的值
-//func TypeSelect(v reflect.Value) interface{} {
-//    return typeSelect(v)
-//}
-func typeSelect(v reflect.Value) interface{} {
+// TypeSelect 类型选择
+//
+//	参：
+//	  v reflect.Value        映射一种未知类型的变量
+//	返：
+//	  any            读出v的值
+//
+//	func TypeSelect(v reflect.Value) any {
+//	   return typeSelect(v)
+//	}
+func typeSelect(v reflect.Value) any {
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint()
+	case reflect.Float32, reflect.Float64:
+		return v.Float()
+	case reflect.Bool:
+		return v.Bool()
+	case reflect.Complex64, reflect.Complex128:
+		return v.Complex()
+	case reflect.Invalid:
+		return nil
+	case reflect.String:
+		return v.String()
+	case reflect.UnsafePointer:
+		return v.Pointer()
+	case reflect.Slice, reflect.Array:
+		if v.CanInterface() {
+			return v.Interface()
+		}
 
-    switch v.Kind() {
-    case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-        return v.Int()
-    case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-        return v.Uint()
-    case reflect.Float32, reflect.Float64:
-        return v.Float()
-    case reflect.Bool:
-        return v.Bool()
-    case reflect.Complex64, reflect.Complex128:
-        return v.Complex()
-    case reflect.Invalid:
-        return nil
-    case reflect.String:
-        return v.String()
-   	case reflect.UnsafePointer:
-   		return v.Pointer()
-    case reflect.Slice, reflect.Array:
-        if v.CanInterface() {
-            return v.Interface()
-        }
-        
-        l := v.Len()
-        c := v.Cap()
-        vet := reflect.SliceOf(v.Elem().Type())
-        cv := reflect.MakeSlice(vet, l, c)
-        for i:=0; i<l; i++ {
-        	cv = reflect.Append(cv, reflect.ValueOf(typeSelect(v.Index(i))))
-        }
-        return cv.Interface()
-    default:
-        if v.CanInterface() {
-            return v.Interface()
-        }
-        return v.String()
-    }
+		l := v.Len()
+		c := v.Cap()
+		vet := reflect.SliceOf(v.Elem().Type())
+		cv := reflect.MakeSlice(vet, l, c)
+		for i := 0; i < l; i++ {
+			cv = reflect.Append(cv, reflect.ValueOf(typeSelect(v.Index(i))))
+		}
+		return cv.Interface()
+	default:
+		if v.CanInterface() {
+			return v.Interface()
+		}
+		return v.String()
+	}
 }
 
-//InDirect 指针到内存
-//    参：
-//      v reflect.Value        映射引用为真实内存地址
-//    返：
-//      reflect.Value          真实内存地址
-//func InDirect(v reflect.Value) reflect.Value {
-//    return inDirect(v)
-//}
+// InDirect 指针到内存
+//
+//	参：
+//	  v reflect.Value        映射引用为真实内存地址
+//	返：
+//	  reflect.Value          真实内存地址
+//
+//	func InDirect(v reflect.Value) reflect.Value {
+//	   return inDirect(v)
+//	}
 func inDirect(v reflect.Value) reflect.Value {
 	for ; v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface; v = v.Elem() {
-    }
-    return v
+	}
+	return v
 }
-
