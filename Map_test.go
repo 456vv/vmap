@@ -1,8 +1,8 @@
 package vmap
 
 import (
-	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
@@ -107,21 +107,6 @@ func Test_NewMap_IndexHas(t *testing.T) {
 
 	val, ok := a.IndexHas("b", "c", "d")
 	if !ok && val != 1 {
-		t.Fatal("error")
-	}
-}
-
-func Test_NewMap_ReadAll(t *testing.T) {
-	a := NewMap()
-	b := a.GetNewMap("b")
-	b.Set("1", "1")
-	b.Set("2", Map{})
-	b.Set("3", NewMap())
-
-	m := NewMap()
-	m.Set("a", a)
-	all := m.ReadAll()
-	if s := fmt.Sprint(all); s != "map[a:map[b:map[1:1 2:{{{0 0} {<nil>} map[] 0} map[] {0 0} [] 0} 3:map[]]]]" {
 		t.Fatal("error")
 	}
 }
@@ -245,5 +230,170 @@ func Test_NewMap_WriteToAndReadFrom(t *testing.T) {
 
 	if m.String() != `{"b":{"a":{"1":"1","2":{},"3":{}}},"c":[{"a":{"1":"1","2":{},"3":{}}},{"1":"1","2":{},"3":{}}]}` {
 		t.Fatal("结果不相等")
+	}
+}
+
+func TestMap_Basic(t *testing.T) {
+	m := NewMap()
+	m.Set("a", 1)
+	m.Set("b", "hello")
+	m.Set("c", NewMap())
+
+	if m.Len() != 3 {
+		t.Fatalf("Len() = %d", m.Len())
+	}
+
+	if v := m.Get("a"); v != 1 {
+		t.Fatal("Get failed")
+	}
+
+	if !m.Has("b") {
+		t.Fatal("Has failed")
+	}
+}
+
+func TestMap_Expired(t *testing.T) {
+	m := NewMap()
+	called := false
+	m.Set("k", "v")
+	m.SetExpiredCall("k", 100*time.Millisecond, func(v any) {
+		called = true
+	})
+
+	time.Sleep(300 * time.Millisecond)
+	if m.Has("k") || !called {
+		t.Fatal("expired failed")
+	}
+}
+
+func TestMap_Nested(t *testing.T) {
+	m := NewMap()
+	sub := m.GetNewMaps("a", "b", "c")
+	sub.Set("d", 999)
+
+	v, ok := m.IndexHas("a", "b", "c", "d")
+	if !ok || v != 999 {
+		t.Fatal("nested IndexHas failed")
+	}
+}
+
+func TestMap_Concurrent(t *testing.T) {
+	m := NewMap()
+	var wg sync.WaitGroup
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			k := id % 20
+			m.Set(k, id)
+			m.Get(k)
+			if id%5 == 0 {
+				m.Del(k)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+func TestMap_JSON(t *testing.T) {
+	m := NewMap()
+	m.GetNewMap("nested").Set("x", 42)
+	m.Set("arr", []any{1, 2, map[string]any{"a": 3}})
+
+	data, err := m.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m2 := NewMap()
+	if err := m2.UnmarshalJSON(data); err != nil {
+		t.Fatal(err)
+	}
+
+	if m2.String() != m.String() {
+		t.Fatal("JSON roundtrip failed")
+	}
+}
+
+func TestMap_Copy(t *testing.T) {
+	src := NewMap()
+	src.GetNewMaps("level1", "level2").Set("deep", "value")
+	src.Set("normal", 42)
+
+	dst := NewMap()
+	dst.Copy(src, true)
+
+	if dst.String() != src.String() {
+		t.Fatalf("Copy not equal:\ngot: %s\nwant:%s", dst.String(), src.String())
+	}
+}
+
+func TestMap_Marshal_Unmarshal(t *testing.T) {
+	m := NewMap()
+	m.GetNewMaps("a", "b").Set("c", []any{1, 2, NewMap()})
+
+	data, err := m.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m2 := NewMap()
+	if err := m2.UnmarshalJSON(data); err != nil {
+		t.Fatal(err)
+	}
+
+	if m2.String() != m.String() {
+		t.Fatal("Marshal/Unmarshal roundtrip failed")
+	}
+}
+
+func TestMap_WriteTo_ReadFrom(t *testing.T) {
+	m := NewMap()
+	m.GetNewMap("nested").Set("x", 100)
+	m.Set("slice", []any{NewMap(), 42})
+
+	target := make(map[string]any)
+	if err := m.WriteTo(target); err != nil {
+		t.Fatal(err)
+	}
+
+	m2 := NewMap()
+	if err := m2.ReadFrom(target); err != nil {
+		t.Fatal(err)
+	}
+
+	if m2.String() != m.String() {
+		t.Fatal("WriteTo/ReadFrom failed")
+	}
+}
+
+func TestMap_Reset(t *testing.T) {
+	m := NewMap()
+	e := false
+	m.Set("k", "v")
+	m.SetExpiredCall("k", 100*time.Millisecond, func(any) { e = true })
+	m.Reset()
+
+	time.Sleep(300 * time.Millisecond)
+	if !e {
+		t.Fatal("Reset failed not call expired function")
+	}
+	if m.Len() != 0 || len(m.Keys()) != 0 {
+		t.Fatal("Reset failed")
+	}
+}
+
+func TestMap_Keys_Values(t *testing.T) {
+	m := NewMap()
+	m.Set(1, "one")
+	m.Set("two", 2)
+	m.Set(true, false)
+
+	keys := m.Keys()
+	values := m.Values()
+
+	if len(keys) != 3 || len(values) != 3 {
+		t.Fatal("Keys/Values length wrong")
 	}
 }

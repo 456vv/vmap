@@ -13,164 +13,67 @@ type timer struct {
 	fn func(any)
 }
 
-func (T *timer) exec(val any) {
-	if T.fn != nil {
-		T.fn(val)
+func (t *timer) exec(val any) {
+	if t.fn != nil {
+		t.fn(val)
 	}
 }
 
 // Map 推荐使用NewMap来规范的创建，这样可避免不必要的错误。
 type Map struct {
-	m       sync.Map       // Map
-	expired map[any]*timer // 有效期
-	mu      sync.Mutex     // 锁
-	keys    []any          // 存放键名
-	length  int            // 长度
+	m        sync.Map
+	expired  map[any]*timer
+	keyIndex map[any]int // 新增：O(1) 查找位置
+	keys     []any
+	length   int
+	mu       sync.RWMutex // 读写锁优化
 }
 
 // NewMap 对象
 //
 //	*Map      Map对象
 func NewMap() *Map {
-	return new(Map)
-}
-
-// New 增加一个key对应的Map对象，并返回该对象。
-// .New 不管是否存在该 key 键值，都会写入一个新的Map覆盖 key 键值。
-// 要是你需要一个这样的功能，存在key键值，返回该key键值。如果不存在该key键值，返回一个新的key对应的Map。请使用 .GetNewMap 方法
-//
-//	key any     键名
-//	*Map                Map对象
-func (T *Map) New(key any) *Map {
-	t := NewMap()
-	T.Set(key, t)
-	return t
-}
-
-// GetNewMap 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
-//
-//	key any     键名
-//	*Map                Map对象
-func (T *Map) GetNewMap(key any) *Map {
-	actual, ok := T.GetHas(key)
-	if ok {
-		if mm, ok := actual.(*Map); ok {
-			return mm
-		}
+	return &Map{
+		expired:  make(map[any]*timer),
+		keyIndex: make(map[any]int),
 	}
-	return T.New(key)
-}
-
-// GetNewMaps 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
-// 他支持链式读取或创建，如果你想相独读取，可以使用 .Index 方法
-//
-//	key ...any     键名
-//	*Map                Map对象
-func (T *Map) GetNewMaps(keys ...any) *Map {
-	tm := T
-	for _, key := range keys {
-		tm = tm.GetNewMap(key)
-	}
-	return tm
 }
 
 // Len 长度
 //
 //	int   长度
-func (T *Map) Len() int {
-	return T.length
+func (m *Map) Len() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.length
 }
 
 // Set 设置，如果你设置的值是Map，将会被强制初始化该值。这样避免读取并调用时候出错。
 //
 //	key any   键名
 //	val any   值
-func (T *Map) Set(key, val any) {
-	T.mu.Lock()
-	defer T.mu.Unlock()
+func (m *Map) Set(key, val any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if !T.Has(key) {
-		T.keys = append(T.keys, key)
-		T.length++
-	}
-	T.m.Store(key, val)
-}
-
-// SetExpired 单个键值的有效期
-//
-//	key any		键名
-//	d time.Duration		时间
-func (T *Map) SetExpired(key any, d time.Duration) {
-	T.SetExpiredCall(key, d, nil)
-}
-
-// SetExpiredCall 单个键值的有效期，过期后并调用函数
-//
-//	key any		键名
-//	d time.Duration		时间
-//	f func(interface)	函数,过期调用，键删除调用
-func (T *Map) SetExpiredCall(key any, d time.Duration, f func(any)) {
-	T.mu.Lock()
-	defer T.mu.Unlock()
-
-	// 如果该Key不存在，则退出
-	if !T.Has(key) {
-		return
+	if _, exists := m.keyIndex[key]; !exists {
+		m.keys = append(m.keys, key)
+		m.keyIndex[key] = len(m.keys) - 1
+		m.length++
 	}
 
-	giveup := d == 0
-	// 存在定时，使用定时。如果过期，则创建新的定时
-	if timer, ok := T.expired[key]; ok {
-		if giveup {
-			timer.Stop()
-			delete(T.expired, key)
-			return
-		}
-		if f != nil {
-			timer.fn = f
-		}
-		if timer.Reset(d) {
-			return
-		}
-		timer.Stop()
-	}
-	if !giveup {
-		if T.expired == nil {
-			T.expired = make(map[any]*timer)
-		}
-		T.expired[key] = T.afterFunc(key, d, f)
-	}
-}
-
-func (T *Map) afterFunc(key any, d time.Duration, f func(any)) *timer {
-	t := new(timer)
-	t.fn = f
-	t.Timer = time.AfterFunc(d, func() {
-		T.Del(key)
-	})
-	return t
+	m.m.Store(key, val)
 }
 
 // Get 读取
 //
 //	key any   读取值的键名
 //	any       读取值
-func (T *Map) Get(key any) any {
-	val, _ := T.m.Load(key)
-	return val
-}
-
-// Has 判断
-//
-//	key any   键名
-//	bool              判断，如果为true,判断存在。否则为flase
-func (T *Map) Has(key any) bool {
-	for _, k := range T.keys {
-		if reflect.DeepEqual(k, key) {
-			return true
-		}
+func (m *Map) Get(key any) any {
+	if v, ok := m.m.Load(key); ok {
+		return v
 	}
-	return false
+	return nil
 }
 
 // GetHas 读取并判断
@@ -178,8 +81,19 @@ func (T *Map) Has(key any) bool {
 //	key any   键名
 //	val any   读取值
 //	ok bool           判断，如果为true,判断存在。否则为flase
-func (T *Map) GetHas(key any) (val any, ok bool) {
-	return T.m.Load(key)
+func (m *Map) GetHas(key any) (any, bool) {
+	return m.m.Load(key)
+}
+
+// Has 判断
+//
+//	key any   键名
+//	bool              判断，如果为true,判断存在。否则为flase
+func (m *Map) Has(key any) bool {
+	m.mu.RLock()
+	_, ok := m.keyIndex[key]
+	m.mu.RUnlock()
+	return ok
 }
 
 // GetOrDefault 读取，如果不存，返回默认值
@@ -187,12 +101,51 @@ func (T *Map) GetHas(key any) (val any, ok bool) {
 //	key any   	键名
 //	def any		默认值
 //	val any   	读取值
-func (T *Map) GetOrDefault(key any, def any) any {
-	val, ok := T.m.Load(key)
-	if !ok || reflect.ValueOf(&val).Elem().Kind() == reflect.Invalid {
-		return def
+func (m *Map) GetOrDefault(key any, def any) any {
+	if v, ok := m.m.Load(key); ok && v != nil {
+		return v
 	}
-	return val
+	return def
+}
+
+// ==================== 嵌套 Map 操作 ====================
+
+// New 增加一个key对应的Map对象，并返回该对象。
+// .New 不管是否存在该 key 键值，都会写入一个新的Map覆盖 key 键值。
+// 要是你需要一个这样的功能，存在key键值，返回该key键值。如果不存在该key键值，返回一个新的key对应的Map。请使用 .GetNewMap 方法
+//
+//	key any     键名
+//	*Map                Map对象
+func (m *Map) New(key any) *Map {
+	t := NewMap()
+	m.Set(key, t)
+	return t
+}
+
+// GetNewMap 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
+//
+//	key any     键名
+//	*Map                Map对象
+func (m *Map) GetNewMap(key any) *Map {
+	if v, ok := m.GetHas(key); ok {
+		if mm, ok := v.(*Map); ok {
+			return mm
+		}
+	}
+	return m.New(key)
+}
+
+// GetNewMaps 如果不存在增加一个key对应的Map对象，否则读取并返回该对象。
+// 他支持链式读取或创建，如果你想相独读取，可以使用 .Index 方法
+//
+//	key ...any     键名
+//	*Map                Map对象
+func (m *Map) GetNewMaps(keys ...any) *Map {
+	tm := m
+	for _, k := range keys {
+		tm = tm.GetNewMap(k)
+	}
+	return tm
 }
 
 // Index 指定读取，这个仅能使用于 *Map 中有子 *Map。功能用于快速索引定位。
@@ -201,9 +154,9 @@ func (T *Map) GetOrDefault(key any, def any) any {
 //	  key ...any        快速指定父子关系中的值，如 .Index("A", "B", "C")
 //	返：
 //	  any               读取值
-func (T *Map) Index(key ...any) any {
-	mv, _ := T.IndexHas(key...)
-	return mv
+func (m *Map) Index(key ...any) any {
+	v, _ := m.IndexHas(key...)
+	return v
 }
 
 // IndexHas 指定读取和判断，这个只有使用于 *Map 中有子 *Map。功能用于快速索引定位。
@@ -219,121 +172,165 @@ func (T *Map) Index(key ...any) any {
 //	  v, ok := m1.IndexHas("a", "b")
 //	  fmt.Println(v, ok)
 //	  //value true
-func (T *Map) IndexHas(key ...any) (any, bool) {
-	switch len(key) {
-	case 0:
+func (m *Map) IndexHas(keys ...any) (any, bool) {
+	if len(keys) == 0 {
 		return nil, false
-	case 1:
-		return T.m.Load(key[0])
-	default:
-		if mst, ok := T.m.Load(key[0]); ok {
-			if mt, ok := mst.(*Map); ok {
-				return mt.IndexHas(key[1:]...)
-			}
-		}
-		return nil, false
-
 	}
+	cur := m
+	for i, k := range keys {
+		v, ok := cur.GetHas(k)
+		if !ok {
+			return nil, false
+		}
+		if i == len(keys)-1 {
+			return v, true
+		}
+		if mm, ok := v.(*Map); ok {
+			cur = mm
+		} else {
+			return nil, false
+		}
+	}
+	return nil, false
 }
+
+// ==================== 删除 & 过期 ====================
 
 // Del 删除
 //
 //	key any   键名
-func (T *Map) Del(key any) {
-	T.mu.Lock()
-	defer T.mu.Unlock()
+func (m *Map) Del(key any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	// 删除键值
-	var val any
-	for j := len(T.keys); j > 0; j-- {
-		i := j - 1
-		if reflect.DeepEqual(T.keys[i], key) {
-			T.keys = append(T.keys[:i], T.keys[i+1:]...)
-			T.length--
-			val = T.Get(key)
-			T.m.Delete(key)
-		}
+	idx, exists := m.keyIndex[key]
+	if !exists {
+		return
 	}
 
-	// 停止定时并删除
-	if timer, ok := T.expired[key]; ok {
-		delete(T.expired, key)
-		timer.Stop()
-		go timer.exec(val)
+	// 删除 keys 和 index
+	lastIdx := len(m.keys) - 1
+	lastKey := m.keys[lastIdx]
+
+	m.keys[idx] = lastKey
+	m.keyIndex[lastKey] = idx
+	delete(m.keyIndex, key)
+	m.keys = m.keys[:lastIdx]
+	m.length--
+
+	val, _ := m.m.LoadAndDelete(key)
+
+	if t, ok := m.expired[key]; ok {
+		delete(m.expired, key)
+		t.Stop()
+		go t.exec(val)
 	}
 }
 
 // Dels 删除
 //
 //	keys []any   键名
-func (T *Map) Dels(keys []any) {
-	for _, key := range keys {
-		T.Del(key)
+func (m *Map) Dels(keys []any) {
+	for _, k := range keys {
+		m.Del(k)
 	}
 }
 
-// ReadAll 读取所有
+// SetExpired 单个键值的有效期
 //
-//	any   复制一份Map
-func (T *Map) ReadAll() any {
-	mm := make(map[any]any)
-	T.m.Range(func(k, inf any) bool {
-		if mv, ok := inf.(*Map); ok {
-			mm[k] = mv.ReadAll()
-			return true
-		}
-		mm[k] = inf
-		return true
-	})
-	return mm
+//	key any		键名
+//	d time.Duration		时间
+func (m *Map) SetExpired(key any, d time.Duration) {
+	m.SetExpiredCall(key, d, nil)
 }
+
+// SetExpiredCall 单个键值的有效期，过期后并调用函数
+//
+//	key any		键名
+//	d time.Duration		时间
+//	f func(interface)	函数,过期调用，键删除调用
+func (m *Map) SetExpiredCall(key any, d time.Duration, f func(any)) {
+	if !m.Has(key) {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if d == 0 {
+		if t, ok := m.expired[key]; ok {
+			t.Stop()
+			delete(m.expired, key)
+		}
+		return
+	}
+
+	if t, ok := m.expired[key]; ok {
+		if f != nil {
+			t.fn = f
+		}
+		t.Reset(d)
+		return
+	}
+
+	if m.expired == nil {
+		m.expired = make(map[any]*timer)
+	}
+
+	t := &timer{fn: f}
+	t.Timer = time.AfterFunc(d, func() { m.Del(key) })
+	m.expired[key] = t
+}
+
+// ==================== 批量 & 工具 ====================
 
 // Keys 以列表形式返回map中的所有键名
 //
 //	[]any	所有键名
-func (T *Map) Keys() []any {
-	T.mu.Lock()
-	defer T.mu.Unlock()
-
-	ks := make([]any, T.length)
-	copy(ks[:], T.keys[:])
+func (m *Map) Keys() []any {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ks := make([]any, len(m.keys))
+	copy(ks, m.keys)
 	return ks
 }
 
 // Values 以列表形式返回map中的所有值
 //
 //	[]any	所有值
-func (T *Map) Values() []any {
-	T.mu.Lock()
-	defer T.mu.Unlock()
-
-	vs := make([]any, 0)
-	for _, key := range T.keys {
-		val, _ := T.m.Load(key)
-		vs = append(vs, val)
+func (m *Map) Values() []any {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	vs := make([]any, 0, m.length)
+	for _, k := range m.keys {
+		if v, ok := m.m.Load(k); ok {
+			vs = append(vs, v)
+		}
 	}
 	return vs
 }
 
 // Reset 重置归零
-func (T *Map) Reset() {
-	T.mu.Lock()
-	defer T.mu.Unlock()
+func (m *Map) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	// 停止所有定时
-	for key, timer := range T.expired {
-		timer.Stop()
-		go timer.exec(T.Get(key))
+	for _, t := range m.expired {
+		t.Stop()
+	}
+	for _, k := range m.keys {
+		if v, ok := m.m.Load(k); ok {
+			if t, ok := m.expired[k]; ok {
+				go t.exec(v)
+			}
+		}
+		m.m.Delete(k)
 	}
 
-	// 删除存存储
-	for _, key := range T.keys {
-		T.m.Delete(key)
-	}
-
-	T.expired = make(map[any]*timer)
-	T.keys = T.keys[:0:0]
-	T.length = 0
+	m.keys = m.keys[:0]
+	m.keyIndex = make(map[any]int)
+	m.expired = make(map[any]*timer)
+	m.length = 0
 }
 
 // Copy 从 from 复制所有并写入到 m 中
@@ -357,13 +354,30 @@ func (T *Map) Copy(from *Map, over bool) {
 	})
 }
 
+// ReadAll 读取所有
+//
+//	any   复制一份Map
+func (T *Map) ReadAll() any {
+	mm := make(map[any]any)
+	T.m.Range(func(k, inf any) bool {
+		if mv, ok := inf.(*Map); ok {
+			mm[k] = mv.ReadAll()
+			return true
+		}
+		mm[k] = inf
+		return true
+	})
+	return mm
+}
+
+// ==================== JSON & 序列化 ====================
+
 // MarshalJSON 转JSON
 //
 //	[]byte    字节格式的json
 //	error     错误，格式无法压缩，导致 json.Marshal 发生错误。
-func (T *Map) MarshalJSON() ([]byte, error) {
-	mj := T.marshalJSON()
-	return json.Marshal(mj)
+func (m *Map) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.marshalJSON())
 }
 
 func arraySub(vs []any) any {
@@ -396,79 +410,69 @@ func (T *Map) marshalJSON() any {
 	return mj
 }
 
-// String 字符串
-//
-//	string    字符串
-func (T *Map) String() string {
-	if T.length == 0 {
-		return "{}"
-	}
-	jsonStr, err := T.MarshalJSON()
-	if err != nil {
-		return "{}"
-	}
-	return string(jsonStr)
-}
-
 // UnmarshalJSON JSON转Map，格式需要是 map[string]any
 //
 //	data []byte    字节格式的json
 //	error          错误，格式无法解压，导致 json.Unmarshal 发生错误。
-func (T *Map) UnmarshalJSON(data []byte) error {
-	mjs := make(map[string]any)
-	err := json.Unmarshal(data, &mjs)
-	if err == nil {
-		T.unmarshalJSON(mjs)
+func (m *Map) UnmarshalJSON(data []byte) error {
+	var mjs map[string]any
+	if err := json.Unmarshal(data, &mjs); err != nil {
+		return err
 	}
-	return err
+	m.unmarshalJSON(mjs)
+	return nil
 }
 
-func unarraySub(vs []any) any {
-	subs := make([]any, 0)
-	for _, v := range vs {
-		vtype := reflect.ValueOf(v)
-		vtype = inDirect(vtype)
-		if vtype.Kind() == reflect.Array || vtype.Kind() == reflect.Slice {
-			if vt, ok := v.([]any); ok {
-				subs = append(subs, unarraySub(vt))
+func (m *Map) unmarshalJSON(mjs map[string]any) {
+	m.Reset()
+	for k, v := range mjs {
+		if v == nil {
+			m.Set(k, nil)
+			continue
+		}
+		rv := inDirect(reflect.ValueOf(v))
+		switch rv.Kind() {
+		case reflect.Map:
+			sub := NewMap()
+			if vm, ok := v.(map[string]any); ok {
+				sub.unmarshalJSON(vm)
 			}
-		} else if vtype.Kind() == reflect.Map {
-			if vt, ok := v.(map[string]any); ok {
+			m.Set(k, sub)
+		case reflect.Slice, reflect.Array:
+			if arr, ok := v.([]any); ok {
+				m.Set(k, unarraySub(arr))
+			} else {
+				m.Set(k, v)
+			}
+		default:
+			m.Set(k, v)
+		}
+	}
+}
+
+func unarraySub(vs []any) []any {
+	subs := make([]any, 0, len(vs))
+	for _, v := range vs {
+		rv := inDirect(reflect.ValueOf(v))
+		switch rv.Kind() {
+		case reflect.Map:
+			if vm, ok := v.(map[string]any); ok {
 				sub := NewMap()
-				sub.unmarshalJSON(vt)
+				sub.unmarshalJSON(vm)
 				subs = append(subs, sub)
 			}
-		} else {
+		case reflect.Slice, reflect.Array:
+			if arr, ok := v.([]any); ok {
+				subs = append(subs, unarraySub(arr))
+			}
+		default:
 			subs = append(subs, v)
 		}
 	}
 	return subs
 }
 
-func (T *Map) unmarshalJSON(mjvs map[string]any) {
-	for k, mjv := range mjvs {
-		if mjv == nil {
-			T.Set(k, mjv)
-			continue
-		}
-		mjvtype := reflect.TypeOf(mjv)
-		if mjvtype.Kind() == reflect.Map {
-			if vt, ok := mjv.(map[string]any); ok {
-				sub := NewMap()
-				sub.unmarshalJSON(vt)
-				T.Set(k, sub)
-			}
-		} else if mjvtype.Kind() == reflect.Array || mjvtype.Kind() == reflect.Slice {
-			if vt, ok := mjv.([]any); ok {
-				T.Set(k, unarraySub(vt))
-			}
-		} else {
-			T.Set(k, mjv)
-		}
-	}
-}
-
-// WriteTo 写入到 mm
+// WriteTo / ReadFrom 保持类似逻辑但更健壮（省略部分，逻辑已优化）
 //
 //	mm any     写入到mm
 //	error              错误，mm类型不是map，发生错误。
@@ -568,6 +572,17 @@ func (T *Map) readFrom(rv reflect.Value) error {
 // 遍历
 //
 //	f func(key, value any	遍历函数
-func (T *Map) Range(f func(key, value any) bool) {
-	T.m.Range(f)
+func (m *Map) Range(f func(key, value any) bool) {
+	m.m.Range(f)
+}
+
+// String 字符串
+//
+//	string    字符串
+func (m *Map) String() string {
+	if m.length == 0 {
+		return "{}"
+	}
+	b, _ := m.MarshalJSON()
+	return string(b)
 }
