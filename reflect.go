@@ -4,17 +4,16 @@ import (
 	"reflect"
 )
 
-// TypeSelect 类型选择
+// TypeSelect 类型选择 - 安全读取 reflect.Value
 //
 //	参：
 //	  v reflect.Value        映射一种未知类型的变量
 //	返：
-//	  any            读出v的值
-//
-//	func TypeSelect(v reflect.Value) any {
-//	   return typeSelect(v)
-//	}
+//	  any            读出v的值，如果v是未知类型，则返回nil
 func typeSelect(v reflect.Value) any {
+	if !v.IsValid() {
+		return nil
+	}
 	switch v.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return v.Int()
@@ -26,8 +25,6 @@ func typeSelect(v reflect.Value) any {
 		return v.Bool()
 	case reflect.Complex64, reflect.Complex128:
 		return v.Complex()
-	case reflect.Invalid:
-		return nil
 	case reflect.String:
 		return v.String()
 	case reflect.UnsafePointer:
@@ -36,15 +33,17 @@ func typeSelect(v reflect.Value) any {
 		if v.CanInterface() {
 			return v.Interface()
 		}
-
+		// 统一转为 []any
 		l := v.Len()
-		c := v.Cap()
-		vet := reflect.SliceOf(v.Elem().Type())
-		cv := reflect.MakeSlice(vet, l, c)
+		result := make([]any, l)
 		for i := 0; i < l; i++ {
-			cv = reflect.Append(cv, reflect.ValueOf(typeSelect(v.Index(i))))
+			result[i] = typeSelect(v.Index(i))
 		}
-		return cv.Interface()
+		return result
+	case reflect.Map:
+		fallthrough
+	case reflect.Struct:
+		fallthrough
 	default:
 		if v.CanInterface() {
 			return v.Interface()
@@ -53,18 +52,18 @@ func typeSelect(v reflect.Value) any {
 	}
 }
 
-// InDirect 指针到内存
+// InDirect 安全解引用指针/接口
 //
 //	参：
 //	  v reflect.Value        映射引用为真实内存地址
 //	返：
 //	  reflect.Value          真实内存地址
-//
-//	func InDirect(v reflect.Value) reflect.Value {
-//	   return inDirect(v)
-//	}
 func inDirect(v reflect.Value) reflect.Value {
-	for ; v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface; v = v.Elem() {
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return v // 返回 nil 指针
+		}
+		v = v.Elem()
 	}
 	return v
 }
