@@ -27,6 +27,7 @@ type Map struct {
 	keys     []any
 	length   int
 	mu       sync.RWMutex // 读写锁优化
+	inited   bool
 }
 
 // NewMap 对象
@@ -36,7 +37,17 @@ func NewMap() *Map {
 	return &Map{
 		expired:  make(map[any]*timer),
 		keyIndex: make(map[any]int),
+		inited:   true,
 	}
+}
+
+func (m *Map) init() {
+	if m.inited { // 只允许初始化一次，避免重复创建map
+		return
+	}
+	m.inited = true
+	m.expired = make(map[any]*timer)
+	m.keyIndex = make(map[any]int)
 }
 
 // Len 长度
@@ -55,6 +66,7 @@ func (m *Map) Len() int {
 func (m *Map) Set(key, val any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.init()
 
 	if _, exists := m.keyIndex[key]; !exists {
 		m.keys = append(m.keys, key)
@@ -91,6 +103,7 @@ func (m *Map) GetHas(key any) (any, bool) {
 //	bool              判断，如果为true,判断存在。否则为flase
 func (m *Map) Has(key any) bool {
 	m.mu.RLock()
+	m.init()
 	_, ok := m.keyIndex[key]
 	m.mu.RUnlock()
 	return ok
@@ -202,6 +215,7 @@ func (m *Map) IndexHas(keys ...any) (any, bool) {
 func (m *Map) Del(key any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.init()
 
 	idx, exists := m.keyIndex[key]
 	if !exists {
@@ -256,6 +270,7 @@ func (m *Map) SetExpiredCall(key any, d time.Duration, f func(any)) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.init()
 
 	if d == 0 {
 		if t, ok := m.expired[key]; ok {
@@ -271,10 +286,6 @@ func (m *Map) SetExpiredCall(key any, d time.Duration, f func(any)) {
 		}
 		t.Reset(d)
 		return
-	}
-
-	if m.expired == nil {
-		m.expired = make(map[any]*timer)
 	}
 
 	t := &timer{fn: f}
@@ -314,6 +325,7 @@ func (m *Map) Values() []any {
 func (m *Map) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.init()
 
 	for _, t := range m.expired {
 		t.Stop()
@@ -569,7 +581,7 @@ func (T *Map) readFrom(rv reflect.Value) error {
 	return nil
 }
 
-// 遍历
+// Range 遍历
 //
 //	f func(key, value any	遍历函数
 func (m *Map) Range(f func(key, value any) bool) {
