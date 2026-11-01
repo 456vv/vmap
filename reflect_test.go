@@ -14,8 +14,8 @@ func Test_typeSelect(t *testing.T) {
 		{"int", 42, 42},
 		{"string", "hello", "hello"},
 		{"bool", true, true},
-		{"slice", []int{1, 2, 3}, []any{1, 2, 3}},
-		{"nested slice", [][]int{{1}, {2}}, []any{[]any{1}, []any{2}}},
+		{"slice", []int{1, 2, 3}, []int{1, 2, 3}},
+		{"nested slice", [][]int{{1}, {2}}, [][]int{{1}, {2}}},
 		{"nil", nil, nil},
 		{"struct", struct{ A int }{1}, struct{ A int }{1}},
 	}
