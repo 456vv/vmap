@@ -98,7 +98,7 @@ func TestZeroValueAndNilReceiver(t *testing.T) {
 		var m *Map
 		m.Set("a", 1)
 		m.Del("a")
-		m.Close()
+		m.ExpireAll()
 		m.Reset()
 		m.Range(func(any, any) bool { t.Fatal("nil 接收者不应回调"); return false })
 
@@ -432,10 +432,10 @@ func TestCallbackConcurrencyAndReentrancy(t *testing.T) {
 }
 
 // ============================================================
-// Close 与 Reset 的差异语义
+// ExpireAll 与 Reset 的差异语义
 // ============================================================
 
-func TestCloseVsReset(t *testing.T) {
+func TestExpireAllVsReset(t *testing.T) {
 	t.Run("Reset clears silently and keeps map usable", func(t *testing.T) {
 		r := &rec{}
 		m := withTTL(mapWith("k", 1), "k", time.Hour, r)
@@ -447,24 +447,6 @@ func TestCloseVsReset(t *testing.T) {
 		m.Set("new_k", 2)
 		if m.Get("new_k") != 2 {
 			t.Fatal("Reset 后的表应能正常读写")
-		}
-	})
-
-	t.Run("Close triggers unexpired callbacks and becomes terminal", func(t *testing.T) {
-		r := &rec{}
-		m := withTTL(mapWith("k", 5), "k", time.Hour, r)
-		m.Close()
-
-		if got := r.exactly(t, 1, 40*time.Millisecond); got[0] != 5 {
-			t.Fatalf("Close 未正确投递未到期回调: %v", got[0])
-		}
-		if !m.IsClosed() {
-			t.Fatal("Close 后 IsClosed 应为 true")
-		}
-		// 关闭后禁止写入
-		m.Set("k", 10)
-		if m.Len() != 0 {
-			t.Fatal("关闭后的 Map 不应接受新写入")
 		}
 	})
 }
@@ -694,7 +676,7 @@ func TestConcurrentMixedStress(t *testing.T) {
 	}
 	wg.Wait()
 	time.Sleep(20 * time.Millisecond)
-	m.Close()
+	m.ExpireAll()
 
 	// 最终验证索引自洽性
 	m.mu.RLock()
