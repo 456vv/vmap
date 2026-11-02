@@ -121,7 +121,6 @@ type Map struct {
 	expSeq  uint64
 	// marshaling 是本表尚未返回的 MarshalJSON 层数，只用原子操作读写。
 	marshaling int32
-	closed     bool
 }
 
 // NewMap 创建空 Map。
@@ -142,19 +141,9 @@ func NewMapSize(n int) *Map {
 	}
 }
 
-// IsClosed 返回 Map 是否已被终态关闭。
-func (m *Map) IsClosed() bool {
-	if m == nil {
-		return false
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.closed
-}
-
 // initLocked 调用者必须持有写锁。读路径禁止调用。
 func (m *Map) initLocked() {
-	if m == nil || m.closed {
+	if m == nil {
 		return
 	}
 	if m.inited && m.data != nil && m.keyIndex != nil {
@@ -239,9 +228,6 @@ func (m *Map) Set(key, val any) {
 	mustKey(key)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return
-	}
 	m.setLocked(key, val)
 }
 
@@ -411,9 +397,6 @@ func (m *Map) LoadOrStore(key, val any) (actual any, loaded bool) {
 	mustKey(key)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return nil, false
-	}
 	m.initLocked()
 	if v, ok := m.data[key]; ok {
 		return v, true
@@ -433,9 +416,6 @@ func (m *Map) New(key any) *Map {
 	defer func() { goCall(c) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return nil
-	}
 	m.initLocked()
 	c, _ = m.delLocked(key)
 	m.setLocked(key, t)
@@ -450,10 +430,6 @@ func (m *Map) GetNewMap(key any) *Map {
 	mustKey(key)
 
 	m.mu.RLock()
-	if m.closed {
-		m.mu.RUnlock()
-		return nil
-	}
 	if v, ok := m.data[key]; ok {
 		if mm := nestedMap(v); mm != nil {
 			m.mu.RUnlock()
@@ -466,9 +442,6 @@ func (m *Map) GetNewMap(key any) *Map {
 	defer func() { goCall(c) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return nil
-	}
 	m.initLocked()
 	if v, ok := m.data[key]; ok {
 		if mm := nestedMap(v); mm != nil {
@@ -537,9 +510,6 @@ func (m *Map) Del(key any) {
 	defer func() { goCall(c) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return
-	}
 	m.initLocked()
 	c, _ = m.delLocked(key)
 }
@@ -553,9 +523,6 @@ func (m *Map) LoadAndDelete(key any) (any, bool) {
 	defer func() { goCall(c) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return nil, false
-	}
 	m.initLocked()
 	c, removed := m.delLocked(key)
 	return c.val, removed
@@ -700,9 +667,6 @@ func (m *Map) Dels(keys []any) {
 	defer func() { goCalls(calls) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return
-	}
 	m.initLocked()
 	for _, k := range keys {
 		if !validKey(k) {
@@ -729,9 +693,6 @@ func (m *Map) SetExpiredCall(key any, d time.Duration, f func(any)) {
 	defer func() { goCall(c) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return
-	}
 	m.initLocked()
 	if _, ok := m.data[key]; !ok {
 		return
@@ -831,9 +792,6 @@ func (m *Map) onTimer(key any, gen uint64) {
 		}()
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		if m.closed {
-			return
-		}
 		e := m.expired[key]
 		if e == nil || e.gen != gen {
 			return
@@ -869,10 +827,10 @@ func (m *Map) TTL(key any) (time.Duration, bool) {
 	return time.Until(e.deadline), true
 }
 
-// Close 终态关闭 Map。
+// ExpireAll 终态关闭 Map。
 // 停止所有定时器并在释放锁后异步触发已登记的有效清理回调。
 // 彻底释放底层数据结构并置为已关闭状态。关闭后 Map 变为不可写入状态。
-func (m *Map) Close() {
+func (m *Map) ExpireAll() {
 	if m == nil {
 		return
 	}
@@ -880,17 +838,8 @@ func (m *Map) Close() {
 	defer func() { goCalls(calls) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return
-	}
-	m.closed = true
 	calls = m.takeExpiredLocked()
-
-	// 释放内部引用
-	m.keys = nil
-	m.data = nil
-	m.keyIndex = nil
-	m.expired = nil
+	m.resetDataLocked(false)
 }
 
 type snapItem struct {
@@ -1068,9 +1017,6 @@ func (m *Map) Reset() {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return
-	}
 	m.initLocked()
 	m.dropExpiredSilentlyLocked()
 	m.resetDataLocked(true)
@@ -1084,8 +1030,8 @@ func (m *Map) dropExpiredSilentlyLocked() {
 }
 
 // resetDataLocked 清空 data/keys/keyIndex。
-// keepSmall 为 true（Reset）时复用不超过 shrinkMinCap 的 keys 数组；
-// 为 false（Close）时总是丢掉底层数组。
+// keepSmall 为 true时复用不超过 shrinkMinCap 的 keys 数组；
+// 为 false 时总是丢掉底层数组。
 // 释放路径不再逐个置 nil：切片被丢掉后元素已经不可达，那遍循环不能让 GC 更快。
 func (m *Map) resetDataLocked(keepSmall bool) {
 	if keepSmall {
@@ -1146,9 +1092,6 @@ func (m *Map) Copy(from *Map, over bool) error {
 	if m == nil || from == nil || m == from {
 		return errors.New("invalid Map Copy")
 	}
-	if m.IsClosed() {
-		return errors.New("vmap: Map is closed")
-	}
 	items, err := from.captureItems()
 	if err != nil {
 		return fmt.Errorf("Map Copy failed: %w", err)
@@ -1173,9 +1116,6 @@ func (m *Map) commitItems(items []snapItem, over, clearStale bool, made map[*Map
 	func() {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		if m.closed {
-			return
-		}
 		m.initLocked()
 		written = make([]any, 0, len(items))
 		for _, it := range items {
@@ -2151,9 +2091,6 @@ func (m *Map) UnmarshalJSON(data []byte) error {
 	defer func() { goCalls(calls) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed {
-		return errors.New("vmap: Map is closed")
-	}
 	m.initLocked()
 	calls = m.takeExpiredLocked()
 	m.adoptLocked(tmp)
@@ -2797,9 +2734,6 @@ func (m *Map) ReadFrom(mm any) (err error) {
 	}()
 	if m == nil {
 		return fmt.Errorf("vmap: ReadFrom nil Map")
-	}
-	if m.IsClosed() {
-		return errors.New("vmap: Map is closed")
 	}
 	rv := inDirect(reflect.ValueOf(mm))
 	if !rv.IsValid() || rv.Kind() != reflect.Map {

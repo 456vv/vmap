@@ -1,19 +1,16 @@
-
-
-
 # vmap
 
 [![Go](https://img.shields.io/badge/Go-1.18%2B-00ADD8)](https://go.dev)
 
 `vmap` 是一个并发安全、支持 TTL 的 `any -> any` 映射容器，专为「配置树 / 会话表 / JSON 友好的动态结构」设计。
 
-在 `sync.Map` 之上补齐了它缺少的东西：**嵌套子表、按 key 的过期回调、深拷贝、JSON 编组、与原生 map 的双向转换**，同时保证所有回调都在锁外异步执行。
+相比标准库 `sync.Map`，补齐了它缺少的东西：**嵌套子表、按 key 的过期回调、深拷贝、JSON 编组、与原生 map 的双向转换**，同时保证所有回调都在锁外异步执行。
 
 ## 特性
 
 - **并发安全**：内部 `sync.RWMutex`，所有导出方法可并发调用（`*Map` 指针语义，禁止按值复制）
-- **TTL**：登记时或读取时均可指定过期时间，支持到期/删除/关闭三种回调
-- **嵌套**：值为 `*Map` 即可无限层组合，提供 `GetNewMaps` / `IndexHas` 链式访问
+- **TTL**：登记时可指定过期时间，支持到期/删除/关闭三种回调
+- **嵌套**：值为 `*Map` 即可多层组合，提供 `GetNewMaps` / `IndexHas` 链式访问
 - **深拷贝**：`Clone` / `Copy` 复制嵌套子表、切片、结构体，并正确处理环引用
 - **JSON 编组**：实现 `json.Marshaler` / `json.Unmarshaler`，键名冲突自动消歧
 - **互操作**：`ReadAll` / `WriteTo` / `ReadFrom` 在 `*Map` 与任意 `map` 之间转换，带溢出检查
@@ -52,8 +49,7 @@ m.GetOrDefault("missing", "dft") // dft
 | `NewMap()` | 创建空表 |
 | `NewMapSize(n int)` | 预分配约 `n` 个键 |
 | `Reset()` | 静默清空（不触发回调），保留小容量，可继续使用 |
-| `Close()` | 终态关闭：停表、释放结构、异步触发已登记回调；之后写入为 no-op |
-| `IsClosed() bool` | 是否已关闭 |
+| `ExpireAll()` | 清空：停止所有定时器、释放底层结构、异步触发已登记回调；表仍可继续使用 |
 
 ### 读写
 
@@ -92,7 +88,7 @@ v, ok := m.IndexHas("a", "b", "c", "deep") // true, true
 ```go
 m.SetExpired("token", 10*time.Minute)
 
-// 带回调：到期、到期前被 Del、Close 时都会调用 f
+// 带回调：到期、到期前被 Del、ExpireAll 时都会调用 f
 m.SetExpiredCall("session", 30*time.Second, func(v any) {
     log.Printf("session expired: %v", v)
 })
@@ -117,7 +113,7 @@ keys := m.Keys()     // 快照，不会随原表变化
 values := m.Values() // 与 Keys 同序
 ```
 
-`Range` / `Keys` / `Values` 均在读锁内取快照后释放锁再回调，因此回调中可以安全地写同一个表。
+`Range` 在读锁内取快照后释放锁再回调，因此回调中可以安全地写同一个表；`Keys` / `Values` 直接返回快照。
 
 ### 复制与克隆
 
@@ -183,7 +179,7 @@ vmap.SetPanicHandler(func(r any) {
 | 存入按值 `Map` | 自动转为独立的 `*Map` 副本（含 TTL 快照） |
 | 存入原生 `map` / slice / struct | 原样保存，`Clone` 时才深拷贝 |
 | `Del` 一个不存在的键 | 不触发回调 |
-| `Close` 之后 | 读取返回零值，写入静默忽略 |
+| `ExpireAll` 之后 | 表被清空，读取返回零值；仍可继续写入 |
 | `Keys` 顺序 | 插入序经交换删除扰动，不是严格有序 |
 | 嵌套 / 编组 / 解析深度 | 上限 **1024** 层，超限返回错误或占位串 |
 | 复制 `Map` 值 | **禁止**，会复制锁并与源共享底层桶 |
@@ -194,7 +190,7 @@ vmap.SetPanicHandler(func(r any) {
 - **三表索引**：`data` + `keys` + `keyIndex` 共同维护顺序与 O(1) 删除；三者长度不一致或下标错位时由 `reindexLocked` 自愈，读路径有兜底快照，写路径不为一致性付出全表扫描代价。
 - **交换删除**：删除把末位键搬到空位，容量超过 `64` 且利用率低于 25% 时紧缩。
 - **TTL 代次**：每个过期登记带自增 `gen`，重新设置 TTL 后旧定时器即使触发也会被识别为过期代次而丢弃。
-- **锁外回调**：所有 `Del` / 过期 / `Close` 的清理回调都先收集成 `call`，释放写锁后再异步执行。
+- **锁外回调**：所有 `Del` / 过期 / `ExpireAll` 的清理回调都先收集成 `call`，释放写锁后再异步执行。
 - **克隆两阶段**：先在无锁状态下建好整张副本图（`repl` / `made`），提交后再逐个激活定时器，且只锁本次新建的表。
 - **JSON 重入计数**：`MarshalJSON` 用原子计数限制同一张表的未返回层数（上限 1024），配合 `seen` 集合截断环引用；嵌套错误被剥回同一个 `errMarshalCycle`。
 - **类型缓存**：`typeMayContainMap` / `typeHasMap` / `typeNeedsDeepCopy` 三种类型查询共用 `sync.Map` 缓存，避免每次反射都重走类型树。
@@ -219,4 +215,3 @@ vmap.SetPanicHandler(func(r any) {
 ## License
 
 Apache-2.0
-
